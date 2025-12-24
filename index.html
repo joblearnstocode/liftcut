@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#0B0D10" />
+  <title>LiftCut</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="title">LiftCut</div>
+    <div class="sub" id="subhead">Loading…</div>
+  </header>
+
+  <main class="wrap">
+    <section class="card" id="sessionCard">
+      <div class="row">
+        <div>
+          <div class="h" id="sessionName">—</div>
+          <div class="s" id="sessionMeta">—</div>
+        </div>
+        <button class="btn" id="startBtn">Start</button>
+      </div>
+    </section>
+
+    <section class="list" id="exerciseList"></section>
+
+    <section class="card hidden" id="workoutPane">
+      <div class="row">
+        <div>
+          <div class="h" id="workoutTitle">Workout</div>
+          <div class="s" id="workoutSubtitle">Tap an exercise to log sets</div>
+        </div>
+        <button class="btn ghost" id="finishBtn">Finish</button>
+      </div>
+      <div class="divider"></div>
+      <div class="list" id="workoutList"></div>
+    </section>
+
+    <section class="card hidden" id="detailPane">
+      <div class="row">
+        <div>
+          <div class="h" id="detailTitle">Exercise</div>
+          <div class="s" id="detailMeta">—</div>
+        </div>
+        <button class="btn ghost" id="backBtn">Back</button>
+      </div>
+      <div class="divider"></div>
+      <div id="sets"></div>
+    </section>
+
+    <section class="card" id="settingsCard">
+      <div class="h">Settings</div>
+      <div class="grid">
+        <label class="field">
+          <span>Bench working weight (kg)</span>
+          <input id="benchW" inputmode="decimal" />
+        </label>
+        <label class="field">
+          <span>Bench reps</span>
+          <input id="benchR" inputmode="numeric" />
+        </label>
+      </div>
+      <div class="row">
+        <div class="s" id="bench1rm">Bench 1RM est: —</div>
+        <button class="btn ghost" id="saveSettingsBtn">Save</button>
+      </div>
+      <div class="tiny">
+        Data stays on this phone only. Use Export for backups.
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="row">
+        <div>
+          <div class="h">Backup</div>
+          <div class="s">Export your history (recommended weekly)</div>
+        </div>
+        <button class="btn ghost" id="exportBtn">Export</button>
+      </div>
+      <pre class="hidden" id="exportOut"></pre>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+  <script>
+    // Register service worker (requires HTTPS or localhost). :contentReference[oaicite:2]{index=2}
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("./sw.js").catch(()=>{});
+    }
+  </script>
+</body>
+</html>
