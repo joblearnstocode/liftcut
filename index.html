@@ -12,81 +12,126 @@
   <header class="top">
     <div class="title">LiftCut</div>
     <div class="sub" id="subhead">Loading…</div>
+    <nav class="tabs" aria-label="Primary">
+      <button class="tab active" id="tabToday">Today</button>
+      <button class="tab" id="tabWorkout">Workout</button>
+      <button class="tab" id="tabHistory">History</button>
+      <button class="tab" id="tabSettings">Settings</button>
+    </nav>
   </header>
 
   <main class="wrap">
-    <section class="card" id="sessionCard">
-      <div class="row">
-        <div>
-          <div class="h" id="sessionName">—</div>
-          <div class="s" id="sessionMeta">—</div>
+    <!-- TODAY -->
+    <section id="paneToday" class="pane">
+      <section class="card">
+        <div class="row">
+          <div>
+            <div class="h" id="sessionName">—</div>
+            <div class="s" id="sessionMeta">—</div>
+          </div>
+          <button class="btn" id="startBtn">Start</button>
         </div>
-        <button class="btn" id="startBtn">Start</button>
-      </div>
+        <div class="divider"></div>
+        <div class="list" id="exercisePreview"></div>
+      </section>
     </section>
 
-    <section class="list" id="exerciseList"></section>
-
-    <section class="card hidden" id="workoutPane">
-      <div class="row">
-        <div>
-          <div class="h" id="workoutTitle">Workout</div>
-          <div class="s" id="workoutSubtitle">Tap an exercise to log sets</div>
+    <!-- WORKOUT -->
+    <section id="paneWorkout" class="pane hidden">
+      <section class="card">
+        <div class="row">
+          <div>
+            <div class="h" id="workoutTitle">Workout</div>
+            <div class="s" id="workoutSubtitle">Tap an exercise to log sets</div>
+          </div>
+          <button class="btn ghost" id="finishBtn">Finish</button>
         </div>
-        <button class="btn ghost" id="finishBtn">Finish</button>
-      </div>
-      <div class="divider"></div>
-      <div class="list" id="workoutList"></div>
+      </section>
+
+      <section class="list" id="workoutList"></section>
     </section>
 
-    <section class="card hidden" id="detailPane">
-      <div class="row">
-        <div>
-          <div class="h" id="detailTitle">Exercise</div>
-          <div class="s" id="detailMeta">—</div>
+    <!-- EXERCISE DETAIL -->
+    <section id="paneDetail" class="pane hidden">
+      <section class="card">
+        <div class="row">
+          <div>
+            <div class="h" id="detailTitle">Exercise</div>
+            <div class="s" id="detailMeta">—</div>
+          </div>
+          <button class="btn ghost" id="backBtn">Back</button>
         </div>
-        <button class="btn ghost" id="backBtn">Back</button>
-      </div>
-      <div class="divider"></div>
-      <div id="sets"></div>
-    </section>
+        <div class="divider"></div>
 
-    <section class="card" id="settingsCard">
-      <div class="h">Settings</div>
-      <div class="grid">
-        <label class="field">
-          <span>Bench working weight (kg)</span>
-          <input id="benchW" inputmode="decimal" />
-        </label>
-        <label class="field">
-          <span>Bench reps</span>
-          <input id="benchR" inputmode="numeric" />
-        </label>
-      </div>
-      <div class="row">
-        <div class="s" id="bench1rm">Bench 1RM est: —</div>
-        <button class="btn ghost" id="saveSettingsBtn">Save</button>
-      </div>
-      <div class="tiny">
-        Data stays on this phone only. Use Export for backups.
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="row">
-        <div>
-          <div class="h">Backup</div>
-          <div class="s">Export your history (recommended weekly)</div>
+        <div class="row tight">
+          <div class="pill" id="planPill">Plan —</div>
+          <div class="pill subtle" id="restPill">Rest —</div>
         </div>
-        <button class="btn ghost" id="exportBtn">Export</button>
-      </div>
-      <pre class="hidden" id="exportOut"></pre>
+
+        <div class="divider"></div>
+        <div id="sets"></div>
+
+        <div class="divider"></div>
+        <div class="row">
+          <button class="btn ghost" id="saveAllBtn">Save All Sets</button>
+          <button class="btn" id="doneBtn">Done</button>
+        </div>
+      </section>
     </section>
+
+    <!-- HISTORY -->
+    <section id="paneHistory" class="pane hidden">
+      <section class="card">
+        <div class="row">
+          <div>
+            <div class="h">History</div>
+            <div class="s">Saved on this phone only</div>
+          </div>
+          <button class="btn ghost" id="exportBtn">Export</button>
+        </div>
+        <div class="divider"></div>
+        <div class="list" id="historyList"></div>
+        <pre class="hidden" id="exportOut"></pre>
+      </section>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="paneSettings" class="pane hidden">
+      <section class="card">
+        <div class="h">Settings</div>
+        <div class="grid">
+          <label class="field">
+            <span>Bench working weight (total kg)</span>
+            <input id="benchW" inputmode="decimal" />
+          </label>
+          <label class="field">
+            <span>Bench reps</span>
+            <input id="benchR" inputmode="numeric" />
+          </label>
+        </div>
+
+        <div class="row">
+          <div class="s" id="bench1rm">Bench 1RM est: —</div>
+          <button class="btn ghost" id="saveSettingsBtn">Save</button>
+        </div>
+
+        <div class="divider"></div>
+        <div class="smallblock">
+          <div class="smalltitle">Privacy</div>
+          <div class="smalltext">
+            No login. No cloud. No trackers. Your data stays on this iPhone. Export is manual.
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <!-- TOAST -->
+    <div class="toast hidden" id="toast"></div>
   </main>
 
   <script src="app.js"></script>
   <script>
-    // Register service worker (requires HTTPS or localhost). :contentReference[oaicite:2]{index=2}
+    // PWA service worker (works on HTTPS / localhost)
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("./sw.js").catch(()=>{});
     }
