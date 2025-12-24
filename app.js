@@ -1,6 +1,7 @@
-// On-device only storage (no network). No permissions requested.
+// LiftCut PWA (offline-first shell, on-device-only data)
+// No permissions. No third-party scripts. No network calls for data.
 
-const LS_KEY = "liftcut_state_v1";
+const LS_KEY = "liftcut_state_v2";
 
 const Program = {
   deloadWeeks: new Set([6, 12]),
@@ -9,7 +10,7 @@ const Program = {
     { name:"Upper A", suggested:"Mon", key:"UA" },
     { name:"Lower A", suggested:"Tue", key:"LA" },
     { name:"Upper B (Push)", suggested:"Thu", key:"UB" },
-    { name:"Upper C (Pull)", suggested:"Fri", key:"UC" },
+    { name:"Upper C (Pull)", suggested:"Fri" , key:"UC" },
     { name:"Lower B", suggested:"Sat", key:"LB" }
   ],
   template: {
@@ -63,17 +64,23 @@ function defaultState(){
       mult: { squatMult:0.85, deadliftMult:0.95, rdlMult:0.75, hipThrustMult:0.90, ohpMult:0.45, rowMult:0.70 }
     },
     progression: { completedSessions: 0, nextIndex: 0 },
-    active: null, // {sessionId, week, key, name, suggested, startedAt}
-    history: [] // sessions with sets
+    active: null,   // {sessionId, week, key, name, suggested, startedAt, sets:{} }
+    history: []     // array of sessions with sets
   };
 }
 
 function load(){
-  try { return JSON.parse(localStorage.getItem(LS_KEY)) || defaultState(); }
-  catch { return defaultState(); }
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if(!raw) return defaultState();
+    return JSON.parse(raw);
+  } catch {
+    return defaultState();
+  }
 }
 function save(st){ localStorage.setItem(LS_KEY, JSON.stringify(st)); }
 
+// helpers
 function bench1rm(w,r){ return w*(1 + (r/30)); }
 function weekFromCompleted(n){ return Math.min(18, Math.max(1, Math.floor(n/5)+1)); }
 function isDeload(week){ return Program.deloadWeeks.has(week); }
@@ -90,207 +97,539 @@ function plannedWeight(ex, week, st){
   return null;
 }
 
+// formatters
+function fmtKg(x){
+  if(x==null || !isFinite(x)) return "—";
+  return Number(x).toFixed(1);
+}
+function fmtMin(sec){
+  const m = Math.round(sec/60);
+  return `${m}m`;
+}
+function fmtDate(ts){
+  const d = new Date(ts);
+  const day = d.toLocaleDateString(undefined, { weekday:"short", month:"short", day:"numeric" });
+  const time = d.toLocaleTimeString(undefined, { hour:"numeric", minute:"2-digit" });
+  return `${day} • ${time}`;
+}
+function normalizeNum(s){
+  if(typeof s !== "string") s = String(s ?? "");
+  const v = parseFloat(s.replace(",", "."));
+  return isFinite(v) ? v : null;
+}
+function normalizeInt(s){
+  if(typeof s !== "string") s = String(s ?? "");
+  const v = parseInt(s, 10);
+  return isFinite(v) ? v : null;
+}
+
 // UI refs
 const subhead = el("subhead");
-const sessionName = el("sessionName");
-const sessionMeta = el("sessionMeta");
+
+// tabs
+const tabToday = el("tabToday");
+const tabWorkout = el("tabWorkout");
+const tabHistory = el("tabHistory");
+const tabSettings = el("tabSettings");
+
+// panes
+const paneToday = el("paneToday");
+const paneWorkout = el("paneWorkout");
+const paneDetail = el("paneDetail");
+const paneHistory = el("paneHistory");
+const paneSettings = el("paneSettings");
+
+// Today
+const sessionNameEl = el("sessionName");
+const sessionMetaEl = el("sessionMeta");
 const startBtn = el("startBtn");
-const finishBtn = el("finishBtn");
-const backBtn = el("backBtn");
-const exerciseList = el("exerciseList");
-const workoutPane = el("workoutPane");
-const detailPane = el("detailPane");
+const exercisePreview = el("exercisePreview");
+
+// Workout
+const workoutTitle = el("workoutTitle");
+const workoutSubtitle = el("workoutSubtitle");
 const workoutList = el("workoutList");
+const finishBtn = el("finishBtn");
+
+// Detail
 const detailTitle = el("detailTitle");
 const detailMeta = el("detailMeta");
+const planPill = el("planPill");
+const restPill = el("restPill");
+const backBtn = el("backBtn");
 const setsEl = el("sets");
+const saveAllBtn = el("saveAllBtn");
+const doneBtn = el("doneBtn");
+
+// History
+const historyList = el("historyList");
+const exportBtn = el("exportBtn");
+const exportOut = el("exportOut");
+
+// Settings
 const benchW = el("benchW");
 const benchR = el("benchR");
 const bench1rmEl = el("bench1rm");
 const saveSettingsBtn = el("saveSettingsBtn");
-const exportBtn = el("exportBtn");
-const exportOut = el("exportOut");
+
+// toast
+const toastEl = el("toast");
+let toastTimer = null;
 
 let st = load();
+let currentExercise = null; // exercise object currently opened in detail
+
+// Navigation
+function setActiveTab(which){
+  // tab classes
+  [tabToday, tabWorkout, tabHistory, tabSettings].forEach(t => t.classList.remove("active"));
+
+  // panes
+  [paneToday, paneWorkout, paneDetail, paneHistory, paneSettings].forEach(p => p.classList.add("hidden"));
+
+  if(which==="today"){
+    tabToday.classList.add("active");
+    paneToday.classList.remove("hidden");
+  } else if(which==="workout"){
+    tabWorkout.classList.add("active");
+    paneWorkout.classList.remove("hidden");
+  } else if(which==="history"){
+    tabHistory.classList.add("active");
+    paneHistory.classList.remove("hidden");
+  } else if(which==="settings"){
+    tabSettings.classList.add("active");
+    paneSettings.classList.remove("hidden");
+  }
+}
+
+tabToday.onclick = () => { render(); setActiveTab("today"); };
+tabWorkout.onclick = () => { renderWorkout(); setActiveTab(st.active ? "workout" : "today"); };
+tabHistory.onclick = () => { renderHistory(); setActiveTab("history"); };
+tabSettings.onclick = () => { renderSettings(); setActiveTab("settings"); };
+
+function toast(msg){
+  if(toastTimer) clearTimeout(toastTimer);
+  toastEl.textContent = msg;
+  toastEl.classList.remove("hidden");
+  toastTimer = setTimeout(() => toastEl.classList.add("hidden"), 1700);
+}
 
 function render(){
+  // compute next session + week
   const week = weekFromCompleted(st.progression.completedSessions);
   const next = Program.cycle[st.progression.nextIndex % Program.cycle.length];
   const deload = isDeload(week);
+
   const b1 = bench1rm(st.settings.benchW, st.settings.benchR);
 
-  subhead.textContent = `Week ${week} of 18 • Next: ${next.name} (Suggested ${next.suggested})${deload ? " • Deload" : ""}`;
-  sessionName.textContent = next.name;
-  sessionMeta.textContent = `Suggested ${next.suggested} • Bench 1RM est ${b1.toFixed(1)} kg`;
+  subhead.textContent =
+    `Week ${week} of 18 • Next: ${next.name} (Suggested ${next.suggested})` +
+    (deload ? " • Deload" : "");
 
-  benchW.value = st.settings.benchW;
-  benchR.value = st.settings.benchR;
-  bench1rmEl.textContent = `Bench 1RM est: ${b1.toFixed(1)} kg`;
+  sessionNameEl.textContent = next.name;
+  sessionMetaEl.textContent =
+    `Suggested ${next.suggested} • Bench 1RM est ${b1.toFixed(1)} kg` +
+    (deload ? " • Keep effort lower" : "");
 
-  // Preview list
-  exerciseList.innerHTML = "";
+  // show Today preview
+  exercisePreview.innerHTML = "";
   const exs = Program.template[next.key];
+
   exs.forEach(exercise => {
     const w = plannedWeight(exercise, week, st);
-    exerciseList.appendChild(exerciseCard(exercise, w, week));
+    exercisePreview.appendChild(previewCard(exercise, w, week));
   });
 
-  workoutPane.classList.toggle("hidden", !st.active);
-  detailPane.classList.add("hidden");
+  // If active session exists, Workout tab should be usable
+  tabWorkout.disabled = !st.active;
+  tabWorkout.style.opacity = st.active ? "1" : "0.5";
+  tabWorkout.style.pointerEvents = st.active ? "auto" : "none";
+
+  // Keep Start button state sensible
+  startBtn.textContent = st.active ? "Resume" : "Start";
 }
 
-function exerciseCard(ex, w, week){
+function previewCard(ex, w, week){
   const div = document.createElement("div");
   div.className = "item";
-  const planText = (w==null) ? "RPE-based" : `Plan ${w.toFixed(1)} ${ex.unit}`;
+  const planText = (w==null) ? "RPE-based" : `Plan ${fmtKg(w)} ${ex.unit}`;
   div.innerHTML = `
     <div class="topline">
       <div class="name">${ex.name}</div>
-      <div class="small">${planText}</div>
+      <div class="badge">${planText}</div>
     </div>
-    <div class="meta">${ex.sets} sets • ${ex.reps} • Rest ${Math.round(ex.rest/60)}m ${isDeload(week) ? "• Deload: stay shy of failure" : ""}</div>
+    <div class="meta">${ex.sets} sets • ${ex.reps} • Rest ${fmtMin(ex.rest)} ${isDeload(week) ? "• Deload: stay shy of failure" : ""}</div>
   `;
   return div;
 }
 
-startBtn.onclick = () => {
+function ensureActive(){
+  if(st.active) return;
   const week = weekFromCompleted(st.progression.completedSessions);
   const next = Program.cycle[st.progression.nextIndex % Program.cycle.length];
-  const sessionId = crypto.randomUUID();
-  st.active = { sessionId, week, key: next.key, name: next.name, suggested: next.suggested, startedAt: Date.now(), sets:{} };
+  st.active = {
+    sessionId: crypto.randomUUID(),
+    week,
+    key: next.key,
+    name: next.name,
+    suggested: next.suggested,
+    startedAt: Date.now(),
+    sets: {} // exerciseId -> array of set rows
+  };
   save(st);
+}
+
+startBtn.onclick = () => {
+  ensureActive();
   renderWorkout();
+  setActiveTab("workout");
 };
 
 function renderWorkout(){
-  if(!st.active) return;
-  const exs = Program.template[st.active.key];
+  if(!st.active){
+    toast("No active session. Start from Today.");
+    setActiveTab("today");
+    return;
+  }
+
+  workoutTitle.textContent = `${st.active.name} • Week ${st.active.week}`;
+  workoutSubtitle.textContent = `Suggested ${st.active.suggested} • ${isDeload(st.active.week) ? "Deload week" : "RPE 7–8"} • Tap an exercise`;
+
   workoutList.innerHTML = "";
+  const exs = Program.template[st.active.key];
+
   exs.forEach(ex => {
     const item = document.createElement("div");
     item.className = "item";
-    const logged = (st.active.sets[ex.id]?.length || 0);
+
+    const logged = (st.active.sets[ex.id]?.filter(s => s.saved).length || 0);
     const w = plannedWeight(ex, st.active.week, st);
+    const planText = (w==null) ? "RPE-based" : `Plan ${fmtKg(w)} ${ex.unit}`;
+
     item.innerHTML = `
       <div class="topline">
         <div class="name">${ex.name}</div>
-        <div class="small">${logged}/${ex.sets}</div>
+        <div class="right">
+          <div class="badge">${planText}</div>
+          <div class="badge">${logged}/${ex.sets}</div>
+        </div>
       </div>
-      <div class="meta">${ex.sets} sets • ${ex.reps} • Rest ${Math.round(ex.rest/60)}m • ${(w==null) ? "RPE-based" : `Plan ${w.toFixed(1)} ${ex.unit}`}</div>
+      <div class="meta">${ex.sets} sets • ${ex.reps} • Rest ${fmtMin(ex.rest)}</div>
     `;
+
     item.onclick = () => openDetail(ex);
     workoutList.appendChild(item);
   });
-  workoutPane.classList.remove("hidden");
 }
 
 function openDetail(ex){
-  detailPane.classList.remove("hidden");
-  workoutPane.classList.add("hidden");
+  if(!st.active) return;
 
-  detailTitle.textContent = ex.name;
-  const w = plannedWeight(ex, st.active.week, st);
-  detailMeta.textContent = `${ex.sets} sets • ${ex.reps} • Rest ${Math.round(ex.rest/60)}m • ${w==null ? "RPE-based" : `Plan ${w.toFixed(1)} ${ex.unit}`}`;
+  currentExercise = ex;
 
   // Ensure set array exists
-  if(!st.active.sets[ex.id]) st.active.sets[ex.id] = Array.from({length: ex.sets}, (_,i)=>({
-    setIndex:i+1, usedPlanned:true, planned:w, weight:w, reps:"", rpe:8.0
-  }));
+  const wPlan = plannedWeight(ex, st.active.week, st);
+  if(!st.active.sets[ex.id]){
+    st.active.sets[ex.id] = Array.from({length: ex.sets}, (_,i)=>({
+      setIndex: i+1,
+      usedPlanned: wPlan != null,
+      planned: wPlan,
+      weight: wPlan != null ? fmtKg(wPlan) : "",
+      reps: "",
+      rpe: "8.0",
+      saved: false
+    }));
+  } else {
+    // update planned snapshot for display (do not overwrite manual weights)
+    st.active.sets[ex.id].forEach(s => { s.planned = wPlan; });
+  }
 
-  // Render set rows
+  // Header info
+  detailTitle.textContent = ex.name;
+  const planText = (wPlan==null) ? "RPE-based" : `Plan ${fmtKg(wPlan)} ${ex.unit}`;
+  detailMeta.textContent = `${ex.sets} sets • ${ex.reps} • Rest ${fmtMin(ex.rest)}`;
+  planPill.textContent = planText;
+  restPill.textContent = `Rest ${fmtMin(ex.rest)}`;
+
+  // Render sets
+  renderSetRows(ex, wPlan);
+
+  // Show detail pane
+  setActiveTab("workout"); // keep workout tab highlighted
+  paneWorkout.classList.add("hidden");
+  paneDetail.classList.remove("hidden");
+  tabWorkout.classList.add("active");
+  [tabToday, tabHistory, tabSettings].forEach(t => t.classList.remove("active"));
+}
+
+function renderSetRows(ex, wPlan){
+  const arr = st.active.sets[ex.id];
+
   setsEl.innerHTML = "";
-  st.active.sets[ex.id].forEach((s, idx) => {
+
+  // helper note
+  const help = document.createElement("div");
+  help.className = "helper";
+  help.textContent = (wPlan==null)
+    ? "RPE-based lifts: enter a sensible working weight you can control for the rep range."
+    : "Use plan for consistency. Switch to manual if equipment or readiness requires an adjustment.";
+  setsEl.appendChild(help);
+
+  arr.forEach((s, idx) => {
     const row = document.createElement("div");
     row.className = "setrow";
+
+    const planAvailable = (wPlan != null);
+    const usePlan = planAvailable ? !!s.usedPlanned : false;
+
+    // if using plan, enforce weight field to plan
+    if(planAvailable && usePlan){
+      s.weight = fmtKg(wPlan);
+    }
+
     row.innerHTML = `
-      <div class="small">Set ${s.setIndex}</div>
+      <div class="label">Set ${s.setIndex}</div>
+
       <div>
-        <div class="toggle">
-          ${w==null ? "" : `<input type="checkbox" ${s.usedPlanned ? "checked":""} data-k="usedPlanned" data-i="${idx}"/> <span>Use plan</span>`}
-        </div>
-        <input ${w!=null && s.usedPlanned ? "disabled":""} inputmode="decimal" placeholder="Weight" value="${s.weight ?? ""}" data-k="weight" data-i="${idx}">
+        ${planAvailable ? `
+          <div class="toggle">
+            <input type="checkbox" data-i="${idx}" data-k="usedPlanned" ${usePlan ? "checked":""}/>
+            <span>${usePlan ? "Using plan" : "Manual"}</span>
+          </div>
+        ` : `<div class="toggle"><span>Manual</span></div>`}
+        <input
+          ${planAvailable && usePlan ? "disabled":""}
+          inputmode="decimal"
+          placeholder="Weight"
+          value="${s.weight ?? ""}"
+          data-i="${idx}"
+          data-k="weight"
+        />
       </div>
+
       <div>
-        <div class="small">Reps</div>
-        <input inputmode="numeric" placeholder="Reps" value="${s.reps ?? ""}" data-k="reps" data-i="${idx}">
+        <div class="toggle"><span>Reps</span></div>
+        <input
+          inputmode="numeric"
+          placeholder="Reps"
+          value="${s.reps ?? ""}"
+          data-i="${idx}"
+          data-k="reps"
+        />
       </div>
+
       <div>
-        <div class="small">RPE</div>
-        <input inputmode="decimal" placeholder="8.0" value="${s.rpe ?? 8.0}" data-k="rpe" data-i="${idx}">
+        <div class="toggle"><span>RPE</span></div>
+        <input
+          inputmode="decimal"
+          placeholder="8.0"
+          value="${s.rpe ?? "8.0"}"
+          data-i="${idx}"
+          data-k="rpe"
+        />
       </div>
     `;
+
     setsEl.appendChild(row);
   });
 
-  // Bind changes
+  // Change handling (single delegated pass)
   setsEl.querySelectorAll("input").forEach(inp => {
-    inp.onchange = (e) => {
+    inp.onchange = () => {
       const i = Number(inp.dataset.i);
       const k = inp.dataset.k;
-      const arr = st.active.sets[ex.id];
-      if(k==="usedPlanned"){
-        arr[i].usedPlanned = inp.checked;
-        if(inp.checked && w!=null){
-          arr[i].weight = w.toFixed(1);
+      const set = arr[i];
+
+      if(k === "usedPlanned"){
+        set.usedPlanned = inp.checked;
+        if(inp.checked && wPlan != null){
+          set.weight = fmtKg(wPlan);
         }
+        set.saved = false;
         save(st);
-        openDetail(ex); // re-render to enable/disable
+        renderSetRows(ex, wPlan);
         return;
       }
-      arr[i][k] = inp.value;
-      save(st);
-    };
-  });
 
-  // Add Save buttons (per set, as requested)
-  st.active.sets[ex.id].forEach((s, idx) => {
-    const btn = document.createElement("button");
-    btn.className = "btn ghost";
-    btn.textContent = `Save Set ${s.setIndex}`;
-    btn.style.marginTop = "8px";
-    btn.onclick = () => {
-      // normalize weight to planned if usedPlanned
-      if(w!=null && s.usedPlanned) s.weight = w.toFixed(1);
+      set[k] = inp.value;
+      set.saved = false;
       save(st);
-      alert(`Saved Set ${s.setIndex}`);
     };
-    setsEl.appendChild(btn);
   });
 }
 
+function saveSet(ex, idx){
+  const wPlan = plannedWeight(ex, st.active.week, st);
+  const arr = st.active.sets[ex.id];
+  const s = arr[idx];
+
+  // normalize fields
+  if(wPlan != null && s.usedPlanned){
+    s.weight = fmtKg(wPlan);
+  } else {
+    const w = normalizeNum(s.weight);
+    s.weight = (w==null) ? "" : fmtKg(w);
+  }
+
+  const reps = normalizeInt(s.reps);
+  s.reps = (reps==null) ? "" : String(reps);
+
+  const rpe = normalizeNum(s.rpe);
+  s.rpe = (rpe==null) ? "8.0" : (Math.round(rpe*10)/10).toFixed(1);
+
+  // mark saved only if there is at least reps or weight input
+  const hasAny = (String(s.weight).trim() !== "") || (String(s.reps).trim() !== "");
+  s.saved = hasAny;
+
+  save(st);
+}
+
+function saveAll(ex){
+  const arr = st.active.sets[ex.id];
+  for(let i=0;i<arr.length;i++){
+    saveSet(ex, i);
+  }
+  toast("Saved");
+}
+
 backBtn.onclick = () => {
-  detailPane.classList.add("hidden");
-  workoutPane.classList.remove("hidden");
+  paneDetail.classList.add("hidden");
+  paneWorkout.classList.remove("hidden");
   renderWorkout();
+  setActiveTab("workout");
+};
+
+doneBtn.onclick = () => {
+  // return to workout list
+  paneDetail.classList.add("hidden");
+  paneWorkout.classList.remove("hidden");
+  renderWorkout();
+  setActiveTab("workout");
+};
+
+saveAllBtn.onclick = () => {
+  if(!st.active || !currentExercise) return;
+  saveAll(currentExercise);
+  // re-render to show updated + normalized
+  openDetail(currentExercise);
 };
 
 finishBtn.onclick = () => {
   if(!st.active) return;
-  st.history.push(st.active);
+
+  // Save all sets for all exercises before finishing (reduces “oops I forgot to save”)
+  const exs = Program.template[st.active.key];
+  exs.forEach(ex => {
+    if(st.active.sets[ex.id]){
+      st.active.sets[ex.id].forEach((_, idx) => saveSet(ex, idx));
+    }
+  });
+
+  // Push to history
+  st.history.push({
+    sessionId: st.active.sessionId,
+    week: st.active.week,
+    key: st.active.key,
+    name: st.active.name,
+    suggested: st.active.suggested,
+    startedAt: st.active.startedAt,
+    finishedAt: Date.now(),
+    sets: st.active.sets
+  });
+
+  // clear active
   st.active = null;
+
+  // advance progression
   st.progression.completedSessions += 1;
   st.progression.nextIndex = (st.progression.nextIndex + 1) % Program.cycle.length;
+
   save(st);
+
+  toast("Session saved");
   render();
+  renderHistory();
+  setActiveTab("today");
 };
 
+function renderHistory(){
+  historyList.innerHTML = "";
+
+  if(!st.history || st.history.length === 0){
+    const empty = document.createElement("div");
+    empty.className = "item";
+    empty.innerHTML = `<div class="name">No sessions yet</div><div class="meta">Complete a workout to see it here.</div>`;
+    historyList.appendChild(empty);
+    exportOut.classList.add("hidden");
+    return;
+  }
+
+  const items = [...st.history].slice().reverse().slice(0, 30);
+  items.forEach(sess => {
+    const div = document.createElement("div");
+    div.className = "item";
+
+    const when = fmtDate(sess.finishedAt || sess.startedAt);
+    const totalSets = Object.values(sess.sets || {}).reduce((acc, arr)=> acc + (arr?.filter(s=>s.saved).length || 0), 0);
+
+    div.innerHTML = `
+      <div class="topline">
+        <div class="name">${sess.name}</div>
+        <div class="badge">Week ${sess.week}</div>
+      </div>
+      <div class="meta">${when} • Logged sets: ${totalSets}</div>
+    `;
+
+    // Tap shows a quick summary toast (minimal)
+    div.onclick = () => toast(`${sess.name} • Week ${sess.week} • ${totalSets} sets logged`);
+    historyList.appendChild(div);
+  });
+
+  exportOut.classList.add("hidden");
+}
+
+function renderSettings(){
+  benchW.value = st.settings.benchW;
+  benchR.value = st.settings.benchR;
+
+  const b1 = bench1rm(st.settings.benchW, st.settings.benchR);
+  bench1rmEl.textContent = `Bench 1RM est: ${b1.toFixed(1)} kg`;
+}
+
 saveSettingsBtn.onclick = () => {
-  const w = Number(String(benchW.value).replace(",", "."));
-  const r = Number(String(benchR.value).replace(",", "."));
-  if(!isFinite(w) || w<=0 || !isFinite(r) || r<=0){ alert("Enter valid bench weight and reps."); return; }
+  const w = normalizeNum(String(benchW.value));
+  const r = normalizeInt(String(benchR.value));
+  if(w==null || w <= 0 || r==null || r <= 0){
+    toast("Enter valid bench weight & reps");
+    return;
+  }
   st.settings.benchW = w;
-  st.settings.benchR = Math.round(r);
+  st.settings.benchR = r;
   save(st);
   render();
+  renderSettings();
+  toast("Saved");
 };
 
 exportBtn.onclick = () => {
-  exportOut.classList.remove("hidden");
-  exportOut.textContent = JSON.stringify(st, null, 2);
+  exportOut.classList.toggle("hidden");
+  if(!exportOut.classList.contains("hidden")){
+    exportOut.textContent = JSON.stringify(st, null, 2);
+  }
 };
 
 function el(id){ return document.getElementById(id); }
 
-// initial render
+// INIT
 render();
-if(st.active) renderWorkout();
+renderSettings();
+renderHistory();
+
+// On load, choose the correct default pane:
+// If you have an active workout, open Workout; else Today.
+if(st.active){
+  renderWorkout();
+  setActiveTab("workout");
+} else {
+  setActiveTab("today");
+}
