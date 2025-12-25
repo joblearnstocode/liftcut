@@ -1,7 +1,7 @@
 // LiftCut PWA (offline-first shell, on-device-only data)
-// No permissions. No third-party scripts. No network calls for data.
+// Focus update: Exercise Detail polish (auto-save, rest timer, next-exercise prompt, finish quote)
 
-const LS_KEY = "liftcut_state_v2";
+const LS_KEY = "liftcut_state_v3";
 
 const Program = {
   deloadWeeks: new Set([6, 12]),
@@ -54,6 +54,14 @@ const Program = {
   }
 };
 
+const QUOTES = [
+  { by: "Marcus Aurelius", text: "You have power over your mind — not outside events. Realize this, and you will find strength." },
+  { by: "Seneca", text: "Luck is what happens when preparation meets opportunity." },
+  { by: "Epictetus", text: "No man is free who is not master of himself." },
+  { by: "Aristotle", text: "We are what we repeatedly do. Excellence, then, is not an act, but a habit." },
+  { by: "Nietzsche", text: "That which does not kill us makes us stronger." }
+];
+
 function ex(id,name,sets,reps,rest,unit,scale){ return {id,name,sets,reps,rest,unit,scale}; }
 
 function defaultState(){
@@ -64,8 +72,9 @@ function defaultState(){
       mult: { squatMult:0.85, deadliftMult:0.95, rdlMult:0.75, hipThrustMult:0.90, ohpMult:0.45, rowMult:0.70 }
     },
     progression: { completedSessions: 0, nextIndex: 0 },
-    active: null,   // {sessionId, week, key, name, suggested, startedAt, sets:{} }
-    history: []     // array of sessions with sets
+    active: null,
+    history: [],
+    timer: { running:false, remainingSec:0, label:"" } // simple in-app timer state
   };
 }
 
@@ -73,7 +82,10 @@ function load(){
   try {
     const raw = localStorage.getItem(LS_KEY);
     if(!raw) return defaultState();
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    // ensure timer exists
+    if(!parsed.timer) parsed.timer = { running:false, remainingSec:0, label:"" };
+    return parsed;
   } catch {
     return defaultState();
   }
@@ -97,7 +109,6 @@ function plannedWeight(ex, week, st){
   return null;
 }
 
-// formatters
 function fmtKg(x){
   if(x==null || !isFinite(x)) return "—";
   return Number(x).toFixed(1);
@@ -105,6 +116,11 @@ function fmtKg(x){
 function fmtMin(sec){
   const m = Math.round(sec/60);
   return `${m}m`;
+}
+function fmtClock(sec){
+  const m = Math.floor(sec/60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2,"0")}`;
 }
 function fmtDate(ts){
   const d = new Date(ts);
@@ -176,15 +192,15 @@ const saveSettingsBtn = el("saveSettingsBtn");
 const toastEl = el("toast");
 let toastTimer = null;
 
+// modal
+let modalOverlay = null;
+
 let st = load();
-let currentExercise = null; // exercise object currently opened in detail
+let currentExercise = null;
 
-// Navigation
+// ---------- Navigation ----------
 function setActiveTab(which){
-  // tab classes
   [tabToday, tabWorkout, tabHistory, tabSettings].forEach(t => t.classList.remove("active"));
-
-  // panes
   [paneToday, paneWorkout, paneDetail, paneHistory, paneSettings].forEach(p => p.classList.add("hidden"));
 
   if(which==="today"){
@@ -211,15 +227,99 @@ function toast(msg){
   if(toastTimer) clearTimeout(toastTimer);
   toastEl.textContent = msg;
   toastEl.classList.remove("hidden");
-  toastTimer = setTimeout(() => toastEl.classList.add("hidden"), 1700);
+  toastTimer = setTimeout(() => toastEl.classList.add("hidden"), 1600);
 }
 
+function showModal({title, text, primaryText, primary, secondaryText, secondary}){
+  closeModal();
+
+  modalOverlay = document.createElement("div");
+  modalOverlay.className = "modalOverlay";
+  modalOverlay.innerHTML = `
+    <div class="modal">
+      <div class="modalTitle">${title}</div>
+      <div class="modalText">${text}</div>
+      <div class="modalActions">
+        <button class="btn ghost" id="mSecondary">${secondaryText}</button>
+        <button class="btn" id="mPrimary">${primaryText}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modalOverlay);
+
+  modalOverlay.querySelector("#mPrimary").onclick = () => { closeModal(); primary?.(); };
+  modalOverlay.querySelector("#mSecondary").onclick = () => { closeModal(); secondary?.(); };
+
+  modalOverlay.onclick = (e) => {
+    if(e.target === modalOverlay) closeModal();
+  };
+}
+
+function closeModal(){
+  if(modalOverlay){
+    modalOverlay.remove();
+    modalOverlay = null;
+  }
+}
+
+// ---------- Timer ----------
+let timerInterval = null;
+
+function startRestTimer(seconds, label){
+  st.timer.running = true;
+  st.timer.remainingSec = Math.max(0, Math.round(seconds));
+  st.timer.label = label || "Rest";
+  save(st);
+  renderTimerPill();
+}
+
+function stopRestTimer(){
+  st.timer.running = false;
+  st.timer.remainingSec = 0;
+  st.timer.label = "";
+  save(st);
+  renderTimerPill();
+}
+
+function tickTimer(){
+  if(!st.timer.running) return;
+  if(st.timer.remainingSec <= 0){
+    st.timer.running = false;
+    save(st);
+    renderTimerPill();
+    toast("Rest complete");
+    return;
+  }
+  st.timer.remainingSec -= 1;
+  save(st);
+  renderTimerPill();
+}
+
+function ensureTimerLoop(){
+  if(timerInterval) return;
+  timerInterval = setInterval(tickTimer, 1000);
+}
+
+// We display the timer in the Rest pill on the detail page (and keep it updated when visible)
+function renderTimerPill(){
+  // If on detail, show countdown
+  if(!currentExercise){
+    // not on detail; don't force UI, but keep state
+    return;
+  }
+  const base = `Rest ${fmtMin(currentExercise.rest)}`;
+  if(st.timer.running){
+    restPill.textContent = `${base} • ${fmtClock(st.timer.remainingSec)}`;
+    return;
+  }
+  restPill.textContent = base;
+}
+
+// ---------- Core render ----------
 function render(){
-  // compute next session + week
   const week = weekFromCompleted(st.progression.completedSessions);
   const next = Program.cycle[st.progression.nextIndex % Program.cycle.length];
   const deload = isDeload(week);
-
   const b1 = bench1rm(st.settings.benchW, st.settings.benchR);
 
   subhead.textContent =
@@ -231,21 +331,17 @@ function render(){
     `Suggested ${next.suggested} • Bench 1RM est ${b1.toFixed(1)} kg` +
     (deload ? " • Keep effort lower" : "");
 
-  // show Today preview
   exercisePreview.innerHTML = "";
   const exs = Program.template[next.key];
-
   exs.forEach(exercise => {
     const w = plannedWeight(exercise, week, st);
     exercisePreview.appendChild(previewCard(exercise, w, week));
   });
 
-  // If active session exists, Workout tab should be usable
   tabWorkout.disabled = !st.active;
   tabWorkout.style.opacity = st.active ? "1" : "0.5";
   tabWorkout.style.pointerEvents = st.active ? "auto" : "none";
 
-  // Keep Start button state sensible
   startBtn.textContent = st.active ? "Resume" : "Start";
 }
 
@@ -274,7 +370,7 @@ function ensureActive(){
     name: next.name,
     suggested: next.suggested,
     startedAt: Date.now(),
-    sets: {} // exerciseId -> array of set rows
+    sets: {}
   };
   save(st);
 }
@@ -298,11 +394,12 @@ function renderWorkout(){
   workoutList.innerHTML = "";
   const exs = Program.template[st.active.key];
 
-  exs.forEach(ex => {
+  exs.forEach((ex, exIdx) => {
     const item = document.createElement("div");
     item.className = "item";
 
-    const logged = (st.active.sets[ex.id]?.filter(s => s.saved).length || 0);
+    const arr = st.active.sets[ex.id] || [];
+    const logged = arr.filter(s => s.completed).length;
     const w = plannedWeight(ex, st.active.week, st);
     const planText = (w==null) ? "RPE-based" : `Plan ${fmtKg(w)} ${ex.unit}`;
 
@@ -317,18 +414,21 @@ function renderWorkout(){
       <div class="meta">${ex.sets} sets • ${ex.reps} • Rest ${fmtMin(ex.rest)}</div>
     `;
 
-    item.onclick = () => openDetail(ex);
+    item.onclick = () => openDetail(ex, exIdx);
     workoutList.appendChild(item);
   });
 }
 
-function openDetail(ex){
+function openDetail(ex, exIdx){
   if(!st.active) return;
 
-  currentExercise = ex;
+  ensureTimerLoop();
 
-  // Ensure set array exists
+  currentExercise = ex;
+  currentExercise.__index = exIdx; // for next-exercise navigation
+
   const wPlan = plannedWeight(ex, st.active.week, st);
+
   if(!st.active.sets[ex.id]){
     st.active.sets[ex.id] = Array.from({length: ex.sets}, (_,i)=>({
       setIndex: i+1,
@@ -337,25 +437,26 @@ function openDetail(ex){
       weight: wPlan != null ? fmtKg(wPlan) : "",
       reps: "",
       rpe: "8.0",
-      saved: false
+      completed: false
     }));
   } else {
-    // update planned snapshot for display (do not overwrite manual weights)
     st.active.sets[ex.id].forEach(s => { s.planned = wPlan; });
   }
 
-  // Header info
   detailTitle.textContent = ex.name;
+
   const planText = (wPlan==null) ? "RPE-based" : `Plan ${fmtKg(wPlan)} ${ex.unit}`;
   detailMeta.textContent = `${ex.sets} sets • ${ex.reps} • Rest ${fmtMin(ex.rest)}`;
-  planPill.textContent = planText;
-  restPill.textContent = `Rest ${fmtMin(ex.rest)}`;
 
-  // Render sets
+  // Plan pill with status dot (on if plan available)
+  planPill.innerHTML = `<span class="dot ${wPlan!=null ? "on":""}"></span><span>${planText}</span>`;
+
+  renderTimerPill(); // uses currentExercise
+
   renderSetRows(ex, wPlan);
 
   // Show detail pane
-  setActiveTab("workout"); // keep workout tab highlighted
+  setActiveTab("workout");
   paneWorkout.classList.add("hidden");
   paneDetail.classList.remove("hidden");
   tabWorkout.classList.add("active");
@@ -364,39 +465,39 @@ function openDetail(ex){
 
 function renderSetRows(ex, wPlan){
   const arr = st.active.sets[ex.id];
-
   setsEl.innerHTML = "";
 
-  // helper note
   const help = document.createElement("div");
   help.className = "helper";
   help.textContent = (wPlan==null)
-    ? "RPE-based lifts: enter a sensible working weight you can control for the rep range."
-    : "Use plan for consistency. Switch to manual if equipment or readiness requires an adjustment.";
+    ? "RPE-based lifts: enter a controlled working weight for the rep range."
+    : "Auto-save is on. Complete a set by entering reps (and weight if manual). Rest timer starts automatically.";
   setsEl.appendChild(help);
 
   arr.forEach((s, idx) => {
-    const row = document.createElement("div");
-    row.className = "setrow";
-
     const planAvailable = (wPlan != null);
     const usePlan = planAvailable ? !!s.usedPlanned : false;
 
-    // if using plan, enforce weight field to plan
     if(planAvailable && usePlan){
       s.weight = fmtKg(wPlan);
     }
 
+    const row = document.createElement("div");
+    row.className = "setrow";
+
     row.innerHTML = `
-      <div class="label">Set ${s.setIndex}</div>
+      <div class="label">
+        <div>Set ${s.setIndex}</div>
+        <div class="savedDot ${s.completed ? "on":""}" title="Completed"></div>
+      </div>
 
       <div>
-        ${planAvailable ? `
-          <div class="toggle">
+        <div class="toggle">
+          ${planAvailable ? `
             <input type="checkbox" data-i="${idx}" data-k="usedPlanned" ${usePlan ? "checked":""}/>
-            <span>${usePlan ? "Using plan" : "Manual"}</span>
-          </div>
-        ` : `<div class="toggle"><span>Manual</span></div>`}
+            <span>${usePlan ? "Plan" : "Manual"}</span>
+          ` : `<span>Manual</span>`}
+        </div>
         <input
           ${planAvailable && usePlan ? "disabled":""}
           inputmode="decimal"
@@ -433,99 +534,227 @@ function renderSetRows(ex, wPlan){
     setsEl.appendChild(row);
   });
 
-  // Change handling (single delegated pass)
+  // quick rest controls (uses Jeremy rest time)
+  const kb = document.createElement("div");
+  kb.className = "kbRow";
+  kb.innerHTML = `
+    <button class="quickBtn" id="qRest">Start Rest (${fmtMin(ex.rest)})</button>
+    <button class="quickBtn" id="q90">+90s</button>
+    <button class="quickBtn" id="qStop">Stop</button>
+  `;
+  setsEl.appendChild(kb);
+
+  el("qRest").onclick = () => startRestTimer(ex.rest, ex.name);
+  el("q90").onclick = () => {
+    if(st.timer.running){
+      startRestTimer(st.timer.remainingSec + 90, st.timer.label);
+      toast("+90s");
+    } else {
+      startRestTimer(90, "Rest");
+    }
+  };
+  el("qStop").onclick = () => stopRestTimer();
+
+  // Auto-save changes
   setsEl.querySelectorAll("input").forEach(inp => {
-    inp.onchange = () => {
-      const i = Number(inp.dataset.i);
-      const k = inp.dataset.k;
-      const set = arr[i];
-
-      if(k === "usedPlanned"){
-        set.usedPlanned = inp.checked;
-        if(inp.checked && wPlan != null){
-          set.weight = fmtKg(wPlan);
-        }
-        set.saved = false;
-        save(st);
-        renderSetRows(ex, wPlan);
-        return;
-      }
-
-      set[k] = inp.value;
-      set.saved = false;
-      save(st);
-    };
+    inp.oninput = () => handleAutoSaveChange(ex, wPlan, inp);
+    inp.onchange = () => handleAutoSaveChange(ex, wPlan, inp);
   });
 }
 
-function saveSet(ex, idx){
-  const wPlan = plannedWeight(ex, st.active.week, st);
+function handleAutoSaveChange(ex, wPlan, inp){
+  const idx = Number(inp.dataset.i);
+  const k = inp.dataset.k;
   const arr = st.active.sets[ex.id];
   const s = arr[idx];
 
-  // normalize fields
-  if(wPlan != null && s.usedPlanned){
-    s.weight = fmtKg(wPlan);
-  } else {
-    const w = normalizeNum(s.weight);
-    s.weight = (w==null) ? "" : fmtKg(w);
+  if(k === "usedPlanned"){
+    s.usedPlanned = inp.checked;
+    if(inp.checked && wPlan != null){
+      s.weight = fmtKg(wPlan);
+    }
+    // changing mode might affect completion
+    s.completed = computeCompleted(s, wPlan);
+    save(st);
+    renderSetRows(ex, wPlan);
+    return;
   }
 
-  const reps = normalizeInt(s.reps);
-  s.reps = (reps==null) ? "" : String(reps);
+  s[k] = inp.value;
 
-  const rpe = normalizeNum(s.rpe);
-  s.rpe = (rpe==null) ? "8.0" : (Math.round(rpe*10)/10).toFixed(1);
+  // Normalize certain inputs lightly (without being intrusive)
+  if(k === "reps"){
+    const r = normalizeInt(s.reps);
+    s.reps = (r==null) ? "" : String(r);
+  }
+  if(k === "rpe"){
+    const v = normalizeNum(s.rpe);
+    s.rpe = (v==null) ? (s.rpe ?? "8.0") : (Math.round(v*10)/10).toFixed(1);
+  }
+  if(k === "weight"){
+    // allow partial input; normalize on completion only
+  }
 
-  // mark saved only if there is at least reps or weight input
-  const hasAny = (String(s.weight).trim() !== "") || (String(s.reps).trim() !== "");
-  s.saved = hasAny;
+  const wasCompleted = s.completed;
+  s.completed = computeCompleted(s, wPlan);
+
+  // If a set transitions to completed, start rest timer automatically
+  if(!wasCompleted && s.completed){
+    // normalize weight at completion time
+    if(wPlan != null && s.usedPlanned){
+      s.weight = fmtKg(wPlan);
+    } else {
+      const w = normalizeNum(s.weight);
+      s.weight = (w==null) ? "" : fmtKg(w);
+    }
+    save(st);
+    startRestTimer(ex.rest, ex.name);
+    toast(`Set ${s.setIndex} saved`);
+
+    // If exercise complete, prompt Next
+    const allDone = arr.every(x => x.completed);
+    if(allDone){
+      promptNextExercise(ex);
+    } else {
+      // jump focus to next reps field (fast)
+      focusNextReps(idx + 1);
+    }
+
+    renderSetRows(ex, wPlan);
+    return;
+  }
 
   save(st);
 }
 
-function saveAll(ex){
-  const arr = st.active.sets[ex.id];
-  for(let i=0;i<arr.length;i++){
-    saveSet(ex, i);
+function computeCompleted(s, wPlan){
+  // Completion rule: reps must be present; and if manual, weight must be present.
+  const repsOk = normalizeInt(s.reps) != null && normalizeInt(s.reps) > 0;
+  if(!repsOk) return false;
+
+  if(wPlan != null && s.usedPlanned){
+    return true;
   }
-  toast("Saved");
+  const w = normalizeNum(s.weight);
+  return (w != null && w > 0);
+}
+
+function focusNextReps(nextSetIndexZeroBased){
+  // finds the next reps input and focuses it
+  const inputs = setsEl.querySelectorAll('input[data-k="reps"]');
+  if(!inputs || inputs.length === 0) return;
+  if(nextSetIndexZeroBased >= inputs.length) return;
+  const next = inputs[nextSetIndexZeroBased];
+  if(next && typeof next.focus === "function") next.focus();
+}
+
+function promptNextExercise(ex){
+  if(!st.active) return;
+  const exs = Program.template[st.active.key];
+  const currentIdx = ex.__index ?? 0;
+
+  // find next exercise (wrap if at end)
+  const nextIdx = Math.min(exs.length - 1, currentIdx + 1);
+  const isLast = (currentIdx >= exs.length - 1);
+
+  if(isLast){
+    showModal({
+      title: "Exercise complete",
+      text: "That was the last exercise for today. You can finish the workout when ready.",
+      primaryText: "Finish Workout",
+      primary: () => finishBtn.click(),
+      secondaryText: "Stay Here",
+      secondary: () => {}
+    });
+    return;
+  }
+
+  const nextEx = exs[nextIdx];
+  showModal({
+    title: "Exercise complete",
+    text: `Move to next: ${nextEx.name}?`,
+    primaryText: "Next Exercise",
+    primary: () => openDetail(nextEx, nextIdx),
+    secondaryText: "Stay",
+    secondary: () => {}
+  });
 }
 
 backBtn.onclick = () => {
   paneDetail.classList.add("hidden");
   paneWorkout.classList.remove("hidden");
+  currentExercise = null;
   renderWorkout();
   setActiveTab("workout");
 };
 
 doneBtn.onclick = () => {
-  // return to workout list
   paneDetail.classList.add("hidden");
   paneWorkout.classList.remove("hidden");
+  currentExercise = null;
   renderWorkout();
   setActiveTab("workout");
 };
 
 saveAllBtn.onclick = () => {
   if(!st.active || !currentExercise) return;
-  saveAll(currentExercise);
-  // re-render to show updated + normalized
-  openDetail(currentExercise);
+  const ex = currentExercise;
+  const wPlan = plannedWeight(ex, st.active.week, st);
+  const arr = st.active.sets[ex.id];
+
+  // Mark any set as completed if it qualifies (no forcing)
+  arr.forEach(s => {
+    s.completed = computeCompleted(s, wPlan);
+    if(s.completed){
+      if(wPlan != null && s.usedPlanned){
+        s.weight = fmtKg(wPlan);
+      } else {
+        const w = normalizeNum(s.weight);
+        s.weight = (w==null) ? "" : fmtKg(w);
+      }
+      const r = normalizeInt(s.reps);
+      s.reps = (r==null) ? "" : String(r);
+      const rpe = normalizeNum(s.rpe);
+      s.rpe = (rpe==null) ? "8.0" : (Math.round(rpe*10)/10).toFixed(1);
+    }
+  });
+
+  save(st);
+  toast("Saved");
+  renderSetRows(ex, wPlan);
+
+  if(arr.every(x => x.completed)){
+    promptNextExercise(ex);
+  }
 };
 
 finishBtn.onclick = () => {
   if(!st.active) return;
 
-  // Save all sets for all exercises before finishing (reduces “oops I forgot to save”)
+  // finalize: compute completion states & normalize
   const exs = Program.template[st.active.key];
   exs.forEach(ex => {
-    if(st.active.sets[ex.id]){
-      st.active.sets[ex.id].forEach((_, idx) => saveSet(ex, idx));
-    }
+    const wPlan = plannedWeight(ex, st.active.week, st);
+    const arr = st.active.sets[ex.id] || [];
+    arr.forEach(s => {
+      s.completed = computeCompleted(s, wPlan);
+      if(s.completed){
+        if(wPlan != null && s.usedPlanned){
+          s.weight = fmtKg(wPlan);
+        } else {
+          const w = normalizeNum(s.weight);
+          s.weight = (w==null) ? "" : fmtKg(w);
+        }
+        const r = normalizeInt(s.reps);
+        s.reps = (r==null) ? "" : String(r);
+        const rpe = normalizeNum(s.rpe);
+        s.rpe = (rpe==null) ? "8.0" : (Math.round(rpe*10)/10).toFixed(1);
+      }
+    });
   });
 
-  // Push to history
+  // store in history
+  const finishedAt = Date.now();
   st.history.push({
     sessionId: st.active.sessionId,
     week: st.active.week,
@@ -533,23 +762,39 @@ finishBtn.onclick = () => {
     name: st.active.name,
     suggested: st.active.suggested,
     startedAt: st.active.startedAt,
-    finishedAt: Date.now(),
+    finishedAt,
     sets: st.active.sets
   });
 
-  // clear active
-  st.active = null;
-
   // advance progression
+  st.active = null;
   st.progression.completedSessions += 1;
   st.progression.nextIndex = (st.progression.nextIndex + 1) % Program.cycle.length;
 
+  // stop timer
+  stopRestTimer();
+
   save(st);
 
-  toast("Session saved");
-  render();
-  renderHistory();
-  setActiveTab("today");
+  // show end message with quote
+  const q = QUOTES[Math.floor(Math.random() * QUOTES.length)];
+  showModal({
+    title: "Workout complete",
+    text: `Nice work. ${q.text} — ${q.by}`,
+    primaryText: "Back to Today",
+    primary: () => {
+      currentExercise = null;
+      render();
+      renderHistory();
+      setActiveTab("today");
+    },
+    secondaryText: "View History",
+    secondary: () => {
+      currentExercise = null;
+      renderHistory();
+      setActiveTab("history");
+    }
+  });
 };
 
 function renderHistory(){
@@ -570,18 +815,16 @@ function renderHistory(){
     div.className = "item";
 
     const when = fmtDate(sess.finishedAt || sess.startedAt);
-    const totalSets = Object.values(sess.sets || {}).reduce((acc, arr)=> acc + (arr?.filter(s=>s.saved).length || 0), 0);
+    const totalSets = Object.values(sess.sets || {}).reduce((acc, arr)=> acc + (arr?.filter(s=>s.completed).length || 0), 0);
 
     div.innerHTML = `
       <div class="topline">
         <div class="name">${sess.name}</div>
         <div class="badge">Week ${sess.week}</div>
       </div>
-      <div class="meta">${when} • Logged sets: ${totalSets}</div>
+      <div class="meta">${when} • Completed sets: ${totalSets}</div>
     `;
-
-    // Tap shows a quick summary toast (minimal)
-    div.onclick = () => toast(`${sess.name} • Week ${sess.week} • ${totalSets} sets logged`);
+    div.onclick = () => toast(`${sess.name} • Week ${sess.week} • ${totalSets} sets completed`);
     historyList.appendChild(div);
   });
 
@@ -625,8 +868,6 @@ render();
 renderSettings();
 renderHistory();
 
-// On load, choose the correct default pane:
-// If you have an active workout, open Workout; else Today.
 if(st.active){
   renderWorkout();
   setActiveTab("workout");
