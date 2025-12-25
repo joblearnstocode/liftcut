@@ -1,22 +1,29 @@
-const CACHE = "liftcut-v2";
-const ASSETS = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.json", "./sw.js"];
+const CACHE = "liftcut-cache-v100";
+const ASSETS = [
+  "./",
+  "./index.html",
+  "./styles.css",
+  "./app.js"
+];
 
-self.addEventListener("install", (e) => {
+self.addEventListener("install", e => {
+  self.skipWaiting();
   e.waitUntil(
-    caches.open(CACHE).then((c) => c.addAll(ASSETS))
+    caches.open(CACHE).then(c => c.addAll(ASSETS))
   );
 });
 
-self.addEventListener("activate", (e) => {
+self.addEventListener("activate", e => {
   e.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.map((k) => (k !== CACHE ? caches.delete(k) : null)))
+    caches.keys().then(keys =>
+      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
     )
   );
+  self.clients.claim();
 });
 
-self.addEventListener("fetch", (e) => {
+self.addEventListener("fetch", e => {
   e.respondWith(
-    caches.match(e.request).then((cached) => cached || fetch(e.request))
+    caches.match(e.request).then(r => r || fetch(e.request))
   );
 });
