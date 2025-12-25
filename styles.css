@@ -29,17 +29,8 @@ body{
   padding: calc(var(--pad) + var(--safe-top)) var(--pad) 10px var(--pad);
 }
 
-.title{
-  font-size:22px;
-  font-weight:650;
-  letter-spacing:0.2px;
-}
-
-.sub{
-  margin-top:6px;
-  color:var(--muted);
-  font-size:13px;
-}
+.title{font-size:22px; font-weight:650; letter-spacing:0.2px}
+.sub{margin-top:6px; color:var(--muted); font-size:13px}
 
 .tabs{
   margin-top:12px;
@@ -50,7 +41,6 @@ body{
   box-shadow: var(--shadow);
   background: rgba(255,255,255,0.02);
 }
-
 .tab{
   flex:1;
   border:0;
@@ -61,7 +51,6 @@ body{
   font-weight:650;
   cursor:pointer;
 }
-
 .tab.active{
   background: #18202B;
   color: var(--text);
@@ -123,11 +112,7 @@ body{
   min-width:84px;
 }
 
-.list{
-  display:flex;
-  flex-direction:column;
-  gap:10px;
-}
+.list{display:flex; flex-direction:column; gap:10px}
 
 .item{
   padding:12px;
@@ -162,12 +147,7 @@ body{
   gap:8px;
 }
 .pill.subtle{color:var(--muted)}
-.pill .dot{
-  width:7px;
-  height:7px;
-  border-radius:999px;
-  background: rgba(255,255,255,0.20);
-}
+.pill .dot{width:7px; height:7px; border-radius:999px; background: rgba(255,255,255,0.20)}
 .pill .dot.on{ background: var(--accent); }
 
 .grid{
@@ -176,14 +156,7 @@ body{
   gap:10px;
   margin-top:10px;
 }
-
-.field span{
-  display:block;
-  color:var(--muted);
-  font-size:12px;
-  margin-bottom:6px;
-}
-
+.field span{display:block; color:var(--muted); font-size:12px; margin-bottom:6px}
 .field input{
   width:100%;
   padding:12px 12px;
@@ -218,12 +191,7 @@ body{
   flex-direction:column;
   gap:6px;
 }
-.savedDot{
-  width:7px;
-  height:7px;
-  border-radius:999px;
-  background: rgba(255,255,255,0.20);
-}
+.savedDot{width:7px; height:7px; border-radius:999px; background: rgba(255,255,255,0.20)}
 .savedDot.on{ background: var(--accent); }
 
 .toggle{
@@ -263,6 +231,19 @@ body{
   cursor:pointer;
 }
 
+/* History selection UI */
+.selectRow{
+  display:flex;
+  gap:10px;
+  align-items:flex-start;
+}
+.selectBox{
+  margin-top:2px;
+  width:18px;
+  height:18px;
+  accent-color: var(--accent);
+}
+
 .toast{
   position:fixed;
   left:16px;
@@ -295,6 +276,16 @@ body{
 }
 .modalTitle{font-weight:650; font-size:16px}
 .modalText{color:var(--muted); font-size:13px; margin-top:6px; line-height:1.4}
+.modalField{margin-top:10px}
+.modalField label{display:block; color:var(--muted); font-size:12px; margin-bottom:6px}
+.modalField input{
+  width:100%;
+  padding:12px 12px;
+  border-radius:14px;
+  border:1px solid var(--stroke);
+  background:#0B0D10;
+  color:var(--text);
+}
 .modalActions{display:flex; gap:10px; margin-top:12px}
 .modalActions .btn{flex:1}
 
