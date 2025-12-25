@@ -23,6 +23,17 @@
   <main class="wrap">
     <!-- TODAY -->
     <section id="paneToday" class="pane">
+      <!-- Completed today card (shown only if last session is today) -->
+      <section class="card hidden" id="todayCompleteCard">
+        <div class="row">
+          <div>
+            <div class="h" id="todayCompleteTitle">Completed today</div>
+            <div class="s" id="todayCompleteMeta">—</div>
+          </div>
+          <button class="btn ghost" id="todayViewDetailsBtn">View details</button>
+        </div>
+      </section>
+
       <section class="card">
         <div class="row">
           <div>
@@ -72,13 +83,13 @@
 
         <div class="divider"></div>
         <div class="row">
-          <button class="btn ghost" id="saveAllBtn">Save All Sets</button>
+          <button class="btn ghost" id="saveAllBtn">Save</button>
           <button class="btn" id="doneBtn">Done</button>
         </div>
       </section>
     </section>
 
-    <!-- HISTORY -->
+    <!-- HISTORY LIST -->
     <section id="paneHistory" class="pane hidden">
       <section class="card">
         <div class="row">
@@ -94,7 +105,7 @@
 
         <div class="divider"></div>
 
-        <!-- Manager tools (shown only in edit mode) -->
+        <!-- Manager tools -->
         <div class="hidden" id="historyTools">
           <div class="row" style="align-items:flex-start">
             <div class="list" style="flex:1">
@@ -112,6 +123,30 @@
 
         <div class="list" id="historyList"></div>
         <pre class="hidden" id="exportOut"></pre>
+      </section>
+    </section>
+
+    <!-- HISTORY DETAIL -->
+    <section id="paneHistoryDetail" class="pane hidden">
+      <section class="card">
+        <div class="row">
+          <div>
+            <div class="h" id="histDetailTitle">Session</div>
+            <div class="s" id="histDetailMeta">—</div>
+          </div>
+          <button class="btn ghost" id="histDetailBackBtn">Back</button>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="row">
+          <div class="pill subtle" id="histDetailSummaryPill">—</div>
+          <button class="btn ghost" id="histDetailDeleteBtn">Delete</button>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="list" id="histDetailBody"></div>
       </section>
     </section>
 
