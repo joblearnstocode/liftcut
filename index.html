@@ -47,7 +47,6 @@
           <button class="btn ghost" id="finishBtn">Finish</button>
         </div>
       </section>
-
       <section class="list" id="workoutList"></section>
     </section>
 
@@ -61,8 +60,8 @@
           </div>
           <button class="btn ghost" id="backBtn">Back</button>
         </div>
-        <div class="divider"></div>
 
+        <div class="divider"></div>
         <div class="row tight">
           <div class="pill" id="planPill">Plan —</div>
           <div class="pill subtle" id="restPill">Rest —</div>
@@ -87,9 +86,30 @@
             <div class="h">History</div>
             <div class="s">Saved on this phone only</div>
           </div>
-          <button class="btn ghost" id="exportBtn">Export</button>
+          <div class="row tight" style="justify-content:flex-end">
+            <button class="btn ghost" id="historyManageBtn">Manage</button>
+            <button class="btn ghost" id="exportBtn">Export</button>
+          </div>
         </div>
+
         <div class="divider"></div>
+
+        <!-- Manager tools (shown only in edit mode) -->
+        <div class="hidden" id="historyTools">
+          <div class="row" style="align-items:flex-start">
+            <div class="list" style="flex:1">
+              <div class="kbRow">
+                <button class="quickBtn" id="selectByWeekBtn">Select by Week</button>
+                <button class="quickBtn" id="selectByDateBtn">Select by Date</button>
+                <button class="quickBtn" id="clearSelectionBtn">Clear selection</button>
+              </div>
+              <div class="helper" id="selectionHint">Select sessions, then delete.</div>
+            </div>
+            <button class="btn" id="deleteSelectedBtn">Delete</button>
+          </div>
+          <div class="divider"></div>
+        </div>
+
         <div class="list" id="historyList"></div>
         <pre class="hidden" id="exportOut"></pre>
       </section>
@@ -131,7 +151,6 @@
 
   <script src="app.js"></script>
   <script>
-    // PWA service worker (works on HTTPS / localhost)
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("./sw.js").catch(()=>{});
     }
