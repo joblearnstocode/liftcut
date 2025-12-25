@@ -1,7 +1,7 @@
 // LiftCut PWA (offline-first shell, on-device-only data)
-// Focus update: Exercise Detail polish (auto-save, rest timer, next-exercise prompt, finish quote)
+// Update: History manager (select/delete by week or date). Still no permissions, no third-party, no cloud.
 
-const LS_KEY = "liftcut_state_v3";
+const LS_KEY = "liftcut_state_v4";
 
 const Program = {
   deloadWeeks: new Set([6, 12]),
@@ -74,7 +74,7 @@ function defaultState(){
     progression: { completedSessions: 0, nextIndex: 0 },
     active: null,
     history: [],
-    timer: { running:false, remainingSec:0, label:"" } // simple in-app timer state
+    timer: { running:false, remainingSec:0, label:"" }
   };
 }
 
@@ -83,8 +83,8 @@ function load(){
     const raw = localStorage.getItem(LS_KEY);
     if(!raw) return defaultState();
     const parsed = JSON.parse(raw);
-    // ensure timer exists
     if(!parsed.timer) parsed.timer = { running:false, remainingSec:0, label:"" };
+    if(!parsed.history) parsed.history = [];
     return parsed;
   } catch {
     return defaultState();
@@ -127,6 +127,13 @@ function fmtDate(ts){
   const day = d.toLocaleDateString(undefined, { weekday:"short", month:"short", day:"numeric" });
   const time = d.toLocaleTimeString(undefined, { hour:"numeric", minute:"2-digit" });
   return `${day} • ${time}`;
+}
+function toISODate(ts){
+  const d = new Date(ts);
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,"0");
+  const day = String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
 }
 function normalizeNum(s){
   if(typeof s !== "string") s = String(s ?? "");
@@ -181,6 +188,13 @@ const doneBtn = el("doneBtn");
 const historyList = el("historyList");
 const exportBtn = el("exportBtn");
 const exportOut = el("exportOut");
+const historyManageBtn = el("historyManageBtn");
+const historyTools = el("historyTools");
+const selectByWeekBtn = el("selectByWeekBtn");
+const selectByDateBtn = el("selectByDateBtn");
+const clearSelectionBtn = el("clearSelectionBtn");
+const deleteSelectedBtn = el("deleteSelectedBtn");
+const selectionHint = el("selectionHint");
 
 // Settings
 const benchW = el("benchW");
@@ -197,6 +211,10 @@ let modalOverlay = null;
 
 let st = load();
 let currentExercise = null;
+
+// history manager (not persisted)
+let historyEditMode = false;
+let selectedSessionIds = new Set();
 
 // ---------- Navigation ----------
 function setActiveTab(which){
@@ -230,8 +248,10 @@ function toast(msg){
   toastTimer = setTimeout(() => toastEl.classList.add("hidden"), 1600);
 }
 
-function showModal({title, text, primaryText, primary, secondaryText, secondary}){
+function showModal({title, text, primaryText, primary, secondaryText, secondary, fieldLabel, fieldType, fieldValue}){
   closeModal();
+
+  const hasField = !!fieldLabel;
 
   modalOverlay = document.createElement("div");
   modalOverlay.className = "modalOverlay";
@@ -239,6 +259,12 @@ function showModal({title, text, primaryText, primary, secondaryText, secondary}
     <div class="modal">
       <div class="modalTitle">${title}</div>
       <div class="modalText">${text}</div>
+      ${hasField ? `
+        <div class="modalField">
+          <label>${fieldLabel}</label>
+          <input id="mField" type="${fieldType || "text"}" value="${fieldValue || ""}" />
+        </div>
+      ` : ``}
       <div class="modalActions">
         <button class="btn ghost" id="mSecondary">${secondaryText}</button>
         <button class="btn" id="mPrimary">${primaryText}</button>
@@ -247,12 +273,22 @@ function showModal({title, text, primaryText, primary, secondaryText, secondary}
   `;
   document.body.appendChild(modalOverlay);
 
-  modalOverlay.querySelector("#mPrimary").onclick = () => { closeModal(); primary?.(); };
-  modalOverlay.querySelector("#mSecondary").onclick = () => { closeModal(); secondary?.(); };
+  const fieldEl = hasField ? modalOverlay.querySelector("#mField") : null;
 
+  modalOverlay.querySelector("#mPrimary").onclick = () => {
+    const val = fieldEl ? fieldEl.value : null;
+    closeModal();
+    primary?.(val);
+  };
+  modalOverlay.querySelector("#mSecondary").onclick = () => {
+    closeModal();
+    secondary?.();
+  };
   modalOverlay.onclick = (e) => {
     if(e.target === modalOverlay) closeModal();
   };
+
+  if(fieldEl) setTimeout(() => fieldEl.focus(), 50);
 }
 
 function closeModal(){
@@ -272,7 +308,6 @@ function startRestTimer(seconds, label){
   save(st);
   renderTimerPill();
 }
-
 function stopRestTimer(){
   st.timer.running = false;
   st.timer.remainingSec = 0;
@@ -280,7 +315,6 @@ function stopRestTimer(){
   save(st);
   renderTimerPill();
 }
-
 function tickTimer(){
   if(!st.timer.running) return;
   if(st.timer.remainingSec <= 0){
@@ -294,19 +328,12 @@ function tickTimer(){
   save(st);
   renderTimerPill();
 }
-
 function ensureTimerLoop(){
   if(timerInterval) return;
   timerInterval = setInterval(tickTimer, 1000);
 }
-
-// We display the timer in the Rest pill on the detail page (and keep it updated when visible)
 function renderTimerPill(){
-  // If on detail, show countdown
-  if(!currentExercise){
-    // not on detail; don't force UI, but keep state
-    return;
-  }
+  if(!currentExercise) return;
   const base = `Rest ${fmtMin(currentExercise.rest)}`;
   if(st.timer.running){
     restPill.textContent = `${base} • ${fmtClock(st.timer.remainingSec)}`;
@@ -423,9 +450,8 @@ function openDetail(ex, exIdx){
   if(!st.active) return;
 
   ensureTimerLoop();
-
   currentExercise = ex;
-  currentExercise.__index = exIdx; // for next-exercise navigation
+  currentExercise.__index = exIdx;
 
   const wPlan = plannedWeight(ex, st.active.week, st);
 
@@ -444,18 +470,14 @@ function openDetail(ex, exIdx){
   }
 
   detailTitle.textContent = ex.name;
-
   const planText = (wPlan==null) ? "RPE-based" : `Plan ${fmtKg(wPlan)} ${ex.unit}`;
   detailMeta.textContent = `${ex.sets} sets • ${ex.reps} • Rest ${fmtMin(ex.rest)}`;
 
-  // Plan pill with status dot (on if plan available)
   planPill.innerHTML = `<span class="dot ${wPlan!=null ? "on":""}"></span><span>${planText}</span>`;
-
-  renderTimerPill(); // uses currentExercise
+  renderTimerPill();
 
   renderSetRows(ex, wPlan);
 
-  // Show detail pane
   setActiveTab("workout");
   paneWorkout.classList.add("hidden");
   paneDetail.classList.remove("hidden");
@@ -484,7 +506,6 @@ function renderSetRows(ex, wPlan){
 
     const row = document.createElement("div");
     row.className = "setrow";
-
     row.innerHTML = `
       <div class="label">
         <div>Set ${s.setIndex}</div>
@@ -530,11 +551,9 @@ function renderSetRows(ex, wPlan){
         />
       </div>
     `;
-
     setsEl.appendChild(row);
   });
 
-  // quick rest controls (uses Jeremy rest time)
   const kb = document.createElement("div");
   kb.className = "kbRow";
   kb.innerHTML = `
@@ -555,7 +574,6 @@ function renderSetRows(ex, wPlan){
   };
   el("qStop").onclick = () => stopRestTimer();
 
-  // Auto-save changes
   setsEl.querySelectorAll("input").forEach(inp => {
     inp.oninput = () => handleAutoSaveChange(ex, wPlan, inp);
     inp.onchange = () => handleAutoSaveChange(ex, wPlan, inp);
@@ -573,7 +591,6 @@ function handleAutoSaveChange(ex, wPlan, inp){
     if(inp.checked && wPlan != null){
       s.weight = fmtKg(wPlan);
     }
-    // changing mode might affect completion
     s.completed = computeCompleted(s, wPlan);
     save(st);
     renderSetRows(ex, wPlan);
@@ -582,7 +599,6 @@ function handleAutoSaveChange(ex, wPlan, inp){
 
   s[k] = inp.value;
 
-  // Normalize certain inputs lightly (without being intrusive)
   if(k === "reps"){
     const r = normalizeInt(s.reps);
     s.reps = (r==null) ? "" : String(r);
@@ -591,16 +607,11 @@ function handleAutoSaveChange(ex, wPlan, inp){
     const v = normalizeNum(s.rpe);
     s.rpe = (v==null) ? (s.rpe ?? "8.0") : (Math.round(v*10)/10).toFixed(1);
   }
-  if(k === "weight"){
-    // allow partial input; normalize on completion only
-  }
 
   const wasCompleted = s.completed;
   s.completed = computeCompleted(s, wPlan);
 
-  // If a set transitions to completed, start rest timer automatically
   if(!wasCompleted && s.completed){
-    // normalize weight at completion time
     if(wPlan != null && s.usedPlanned){
       s.weight = fmtKg(wPlan);
     } else {
@@ -611,15 +622,12 @@ function handleAutoSaveChange(ex, wPlan, inp){
     startRestTimer(ex.rest, ex.name);
     toast(`Set ${s.setIndex} saved`);
 
-    // If exercise complete, prompt Next
     const allDone = arr.every(x => x.completed);
     if(allDone){
       promptNextExercise(ex);
     } else {
-      // jump focus to next reps field (fast)
       focusNextReps(idx + 1);
     }
-
     renderSetRows(ex, wPlan);
     return;
   }
@@ -628,19 +636,16 @@ function handleAutoSaveChange(ex, wPlan, inp){
 }
 
 function computeCompleted(s, wPlan){
-  // Completion rule: reps must be present; and if manual, weight must be present.
   const repsOk = normalizeInt(s.reps) != null && normalizeInt(s.reps) > 0;
   if(!repsOk) return false;
 
-  if(wPlan != null && s.usedPlanned){
-    return true;
-  }
+  if(wPlan != null && s.usedPlanned) return true;
+
   const w = normalizeNum(s.weight);
   return (w != null && w > 0);
 }
 
 function focusNextReps(nextSetIndexZeroBased){
-  // finds the next reps input and focuses it
   const inputs = setsEl.querySelectorAll('input[data-k="reps"]');
   if(!inputs || inputs.length === 0) return;
   if(nextSetIndexZeroBased >= inputs.length) return;
@@ -652,8 +657,6 @@ function promptNextExercise(ex){
   if(!st.active) return;
   const exs = Program.template[st.active.key];
   const currentIdx = ex.__index ?? 0;
-
-  // find next exercise (wrap if at end)
   const nextIdx = Math.min(exs.length - 1, currentIdx + 1);
   const isLast = (currentIdx >= exs.length - 1);
 
@@ -702,22 +705,7 @@ saveAllBtn.onclick = () => {
   const wPlan = plannedWeight(ex, st.active.week, st);
   const arr = st.active.sets[ex.id];
 
-  // Mark any set as completed if it qualifies (no forcing)
-  arr.forEach(s => {
-    s.completed = computeCompleted(s, wPlan);
-    if(s.completed){
-      if(wPlan != null && s.usedPlanned){
-        s.weight = fmtKg(wPlan);
-      } else {
-        const w = normalizeNum(s.weight);
-        s.weight = (w==null) ? "" : fmtKg(w);
-      }
-      const r = normalizeInt(s.reps);
-      s.reps = (r==null) ? "" : String(r);
-      const rpe = normalizeNum(s.rpe);
-      s.rpe = (rpe==null) ? "8.0" : (Math.round(rpe*10)/10).toFixed(1);
-    }
-  });
+  arr.forEach(s => { s.completed = computeCompleted(s, wPlan); });
 
   save(st);
   toast("Saved");
@@ -731,29 +719,6 @@ saveAllBtn.onclick = () => {
 finishBtn.onclick = () => {
   if(!st.active) return;
 
-  // finalize: compute completion states & normalize
-  const exs = Program.template[st.active.key];
-  exs.forEach(ex => {
-    const wPlan = plannedWeight(ex, st.active.week, st);
-    const arr = st.active.sets[ex.id] || [];
-    arr.forEach(s => {
-      s.completed = computeCompleted(s, wPlan);
-      if(s.completed){
-        if(wPlan != null && s.usedPlanned){
-          s.weight = fmtKg(wPlan);
-        } else {
-          const w = normalizeNum(s.weight);
-          s.weight = (w==null) ? "" : fmtKg(w);
-        }
-        const r = normalizeInt(s.reps);
-        s.reps = (r==null) ? "" : String(r);
-        const rpe = normalizeNum(s.rpe);
-        s.rpe = (rpe==null) ? "8.0" : (Math.round(rpe*10)/10).toFixed(1);
-      }
-    });
-  });
-
-  // store in history
   const finishedAt = Date.now();
   st.history.push({
     sessionId: st.active.sessionId,
@@ -766,17 +731,13 @@ finishBtn.onclick = () => {
     sets: st.active.sets
   });
 
-  // advance progression
   st.active = null;
   st.progression.completedSessions += 1;
   st.progression.nextIndex = (st.progression.nextIndex + 1) % Program.cycle.length;
 
-  // stop timer
   stopRestTimer();
-
   save(st);
 
-  // show end message with quote
   const q = QUOTES[Math.floor(Math.random() * QUOTES.length)];
   showModal({
     title: "Workout complete",
@@ -797,7 +758,101 @@ finishBtn.onclick = () => {
   });
 };
 
+// ---------- HISTORY MANAGER ----------
+historyManageBtn.onclick = () => {
+  historyEditMode = !historyEditMode;
+  if(!historyEditMode){
+    selectedSessionIds.clear();
+  }
+  renderHistory();
+};
+
+clearSelectionBtn.onclick = () => {
+  selectedSessionIds.clear();
+  renderHistory();
+};
+
+selectByWeekBtn.onclick = () => {
+  showModal({
+    title: "Select by Week",
+    text: "Enter a week number (1–18). Sessions from that week will be selected.",
+    fieldLabel: "Week number",
+    fieldType: "number",
+    fieldValue: "",
+    primaryText: "Select",
+    primary: (val) => {
+      const w = normalizeInt(val);
+      if(w==null || w < 1 || w > 18){
+        toast("Enter week 1–18");
+        return;
+      }
+      st.history.forEach(s => { if(s.week === w) selectedSessionIds.add(s.sessionId); });
+      renderHistory();
+      toast(`Selected week ${w}`);
+    },
+    secondaryText: "Cancel",
+    secondary: () => {}
+  });
+};
+
+selectByDateBtn.onclick = () => {
+  showModal({
+    title: "Select by Date",
+    text: "Pick a date. Sessions logged on that day will be selected.",
+    fieldLabel: "Date",
+    fieldType: "date",
+    fieldValue: "",
+    primaryText: "Select",
+    primary: (val) => {
+      if(!val){
+        toast("Pick a date");
+        return;
+      }
+      st.history.forEach(s => {
+        const iso = toISODate(s.finishedAt || s.startedAt);
+        if(iso === val) selectedSessionIds.add(s.sessionId);
+      });
+      renderHistory();
+      toast("Selected date");
+    },
+    secondaryText: "Cancel",
+    secondary: () => {}
+  });
+};
+
+deleteSelectedBtn.onclick = () => {
+  const count = selectedSessionIds.size;
+  if(count === 0){
+    toast("No sessions selected");
+    return;
+  }
+
+  showModal({
+    title: "Delete selected?",
+    text: `This will permanently delete ${count} session(s) from this phone.`,
+    primaryText: "Delete",
+    primary: () => {
+      st.history = st.history.filter(s => !selectedSessionIds.has(s.sessionId));
+      selectedSessionIds.clear();
+      save(st);
+      renderHistory();
+      toast("Deleted");
+    },
+    secondaryText: "Cancel",
+    secondary: () => {}
+  });
+};
+
 function renderHistory(){
+  exportOut.classList.add("hidden");
+
+  // toggle tools
+  historyTools.classList.toggle("hidden", !historyEditMode);
+  historyManageBtn.textContent = historyEditMode ? "Done" : "Manage";
+  selectionHint.textContent = historyEditMode
+    ? `Selected: ${selectedSessionIds.size}`
+    : "Select sessions, then delete.";
+
   historyList.innerHTML = "";
 
   if(!st.history || st.history.length === 0){
@@ -805,11 +860,10 @@ function renderHistory(){
     empty.className = "item";
     empty.innerHTML = `<div class="name">No sessions yet</div><div class="meta">Complete a workout to see it here.</div>`;
     historyList.appendChild(empty);
-    exportOut.classList.add("hidden");
     return;
   }
 
-  const items = [...st.history].slice().reverse().slice(0, 30);
+  const items = [...st.history].slice().reverse().slice(0, 60);
   items.forEach(sess => {
     const div = document.createElement("div");
     div.className = "item";
@@ -817,28 +871,60 @@ function renderHistory(){
     const when = fmtDate(sess.finishedAt || sess.startedAt);
     const totalSets = Object.values(sess.sets || {}).reduce((acc, arr)=> acc + (arr?.filter(s=>s.completed).length || 0), 0);
 
-    div.innerHTML = `
-      <div class="topline">
-        <div class="name">${sess.name}</div>
-        <div class="badge">Week ${sess.week}</div>
-      </div>
-      <div class="meta">${when} • Completed sets: ${totalSets}</div>
-    `;
-    div.onclick = () => toast(`${sess.name} • Week ${sess.week} • ${totalSets} sets completed`);
+    const checked = selectedSessionIds.has(sess.sessionId);
+
+    if(historyEditMode){
+      div.innerHTML = `
+        <div class="selectRow">
+          <input class="selectBox" type="checkbox" ${checked ? "checked":""} />
+          <div style="flex:1">
+            <div class="topline">
+              <div class="name">${sess.name}</div>
+              <div class="right">
+                <div class="badge">Week ${sess.week}</div>
+              </div>
+            </div>
+            <div class="meta">${when} • Completed sets: ${totalSets}</div>
+          </div>
+        </div>
+      `;
+
+      const cb = div.querySelector("input.selectBox");
+      cb.onclick = (e) => {
+        e.stopPropagation();
+        if(cb.checked) selectedSessionIds.add(sess.sessionId);
+        else selectedSessionIds.delete(sess.sessionId);
+        selectionHint.textContent = `Selected: ${selectedSessionIds.size}`;
+      };
+
+      // tapping row toggles too
+      div.onclick = () => {
+        if(checked) selectedSessionIds.delete(sess.sessionId);
+        else selectedSessionIds.add(sess.sessionId);
+        renderHistory();
+      };
+    } else {
+      div.innerHTML = `
+        <div class="topline">
+          <div class="name">${sess.name}</div>
+          <div class="badge">Week ${sess.week}</div>
+        </div>
+        <div class="meta">${when} • Completed sets: ${totalSets}</div>
+      `;
+      div.onclick = () => toast(`${sess.name} • Week ${sess.week} • ${totalSets} sets completed`);
+    }
+
     historyList.appendChild(div);
   });
-
-  exportOut.classList.add("hidden");
 }
 
+// ---------- SETTINGS ----------
 function renderSettings(){
   benchW.value = st.settings.benchW;
   benchR.value = st.settings.benchR;
-
   const b1 = bench1rm(st.settings.benchW, st.settings.benchR);
   bench1rmEl.textContent = `Bench 1RM est: ${b1.toFixed(1)} kg`;
 }
-
 saveSettingsBtn.onclick = () => {
   const w = normalizeNum(String(benchW.value));
   const r = normalizeInt(String(benchR.value));
