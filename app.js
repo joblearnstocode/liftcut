@@ -1,7 +1,9 @@
 // LiftCut PWA (offline-first shell, on-device-only data)
-// Update: History manager (select/delete by week or date). Still no permissions, no third-party, no cloud.
+// This version keeps: no third-party, no permissions, no cloud.
+// Fixes: iOS zoom, commit-to-complete, history details accordion, today completed card,
+// suggested default order + optional override + scroll to suggested.
 
-const LS_KEY = "liftcut_state_v4";
+const LS_KEY = "liftcut_state_v4"; // keep to preserve existing data
 
 const Program = {
   deloadWeeks: new Set([6, 12]),
@@ -135,6 +137,9 @@ function toISODate(ts){
   const day = String(d.getDate()).padStart(2,"0");
   return `${y}-${m}-${day}`;
 }
+function isSameLocalDay(tsA, tsB){
+  return toISODate(tsA) === toISODate(tsB);
+}
 function normalizeNum(s){
   if(typeof s !== "string") s = String(s ?? "");
   const v = parseFloat(s.replace(",", "."));
@@ -145,6 +150,7 @@ function normalizeInt(s){
   const v = parseInt(s, 10);
   return isFinite(v) ? v : null;
 }
+function clamp(n, lo, hi){ return Math.min(hi, Math.max(lo, n)); }
 
 // UI refs
 const subhead = el("subhead");
@@ -160,9 +166,15 @@ const paneToday = el("paneToday");
 const paneWorkout = el("paneWorkout");
 const paneDetail = el("paneDetail");
 const paneHistory = el("paneHistory");
+const paneHistoryDetail = el("paneHistoryDetail");
 const paneSettings = el("paneSettings");
 
 // Today
+const todayCompleteCard = el("todayCompleteCard");
+const todayCompleteTitle = el("todayCompleteTitle");
+const todayCompleteMeta = el("todayCompleteMeta");
+const todayViewDetailsBtn = el("todayViewDetailsBtn");
+
 const sessionNameEl = el("sessionName");
 const sessionMetaEl = el("sessionMeta");
 const startBtn = el("startBtn");
@@ -184,7 +196,7 @@ const setsEl = el("sets");
 const saveAllBtn = el("saveAllBtn");
 const doneBtn = el("doneBtn");
 
-// History
+// History list
 const historyList = el("historyList");
 const exportBtn = el("exportBtn");
 const exportOut = el("exportOut");
@@ -195,6 +207,14 @@ const selectByDateBtn = el("selectByDateBtn");
 const clearSelectionBtn = el("clearSelectionBtn");
 const deleteSelectedBtn = el("deleteSelectedBtn");
 const selectionHint = el("selectionHint");
+
+// History detail
+const histDetailTitle = el("histDetailTitle");
+const histDetailMeta = el("histDetailMeta");
+const histDetailSummaryPill = el("histDetailSummaryPill");
+const histDetailBody = el("histDetailBody");
+const histDetailBackBtn = el("histDetailBackBtn");
+const histDetailDeleteBtn = el("histDetailDeleteBtn");
 
 // Settings
 const benchW = el("benchW");
@@ -216,10 +236,17 @@ let currentExercise = null;
 let historyEditMode = false;
 let selectedSessionIds = new Set();
 
+// history detail state (not persisted)
+let currentHistorySessionId = null;
+let historyExpanded = {}; // { [exerciseId]: boolean }
+
+// workout scroll guidance
+let shouldScrollToSuggested = false;
+
 // ---------- Navigation ----------
 function setActiveTab(which){
   [tabToday, tabWorkout, tabHistory, tabSettings].forEach(t => t.classList.remove("active"));
-  [paneToday, paneWorkout, paneDetail, paneHistory, paneSettings].forEach(p => p.classList.add("hidden"));
+  [paneToday, paneWorkout, paneDetail, paneHistory, paneHistoryDetail, paneSettings].forEach(p => p.classList.add("hidden"));
 
   if(which==="today"){
     tabToday.classList.add("active");
@@ -230,6 +257,9 @@ function setActiveTab(which){
   } else if(which==="history"){
     tabHistory.classList.add("active");
     paneHistory.classList.remove("hidden");
+  } else if(which==="historyDetail"){
+    tabHistory.classList.add("active");
+    paneHistoryDetail.classList.remove("hidden");
   } else if(which==="settings"){
     tabSettings.classList.add("active");
     paneSettings.classList.remove("hidden");
@@ -237,7 +267,15 @@ function setActiveTab(which){
 }
 
 tabToday.onclick = () => { render(); setActiveTab("today"); };
-tabWorkout.onclick = () => { renderWorkout(); setActiveTab(st.active ? "workout" : "today"); };
+tabWorkout.onclick = () => {
+  if(!st.active){
+    render();
+    setActiveTab("today");
+    return;
+  }
+  renderWorkout();
+  setActiveTab("workout");
+};
 tabHistory.onclick = () => { renderHistory(); setActiveTab("history"); };
 tabSettings.onclick = () => { renderSettings(); setActiveTab("settings"); };
 
@@ -248,10 +286,17 @@ function toast(msg){
   toastTimer = setTimeout(() => toastEl.classList.add("hidden"), 1600);
 }
 
-function showModal({title, text, primaryText, primary, secondaryText, secondary, fieldLabel, fieldType, fieldValue}){
+function blurActive(){
+  const a = document.activeElement;
+  if(a && typeof a.blur === "function") a.blur();
+}
+
+function showModal({title, text, primaryText, primary, secondaryText, secondary, tertiaryText, tertiary, fieldLabel, fieldType, fieldValue}){
+  blurActive();
   closeModal();
 
   const hasField = !!fieldLabel;
+  const hasTertiary = !!tertiaryText;
 
   modalOverlay = document.createElement("div");
   modalOverlay.className = "modalOverlay";
@@ -267,6 +312,7 @@ function showModal({title, text, primaryText, primary, secondaryText, secondary,
       ` : ``}
       <div class="modalActions">
         <button class="btn ghost" id="mSecondary">${secondaryText}</button>
+        ${hasTertiary ? `<button class="btn ghost" id="mTertiary">${tertiaryText}</button>` : ``}
         <button class="btn" id="mPrimary">${primaryText}</button>
       </div>
     </div>
@@ -284,9 +330,13 @@ function showModal({title, text, primaryText, primary, secondaryText, secondary,
     closeModal();
     secondary?.();
   };
-  modalOverlay.onclick = (e) => {
-    if(e.target === modalOverlay) closeModal();
-  };
+  if(hasTertiary){
+    modalOverlay.querySelector("#mTertiary").onclick = () => {
+      closeModal();
+      tertiary?.();
+    };
+  }
+  modalOverlay.onclick = (e) => { if(e.target === modalOverlay) closeModal(); };
 
   if(fieldEl) setTimeout(() => fieldEl.focus(), 50);
 }
@@ -308,6 +358,7 @@ function startRestTimer(seconds, label){
   save(st);
   renderTimerPill();
 }
+
 function stopRestTimer(){
   st.timer.running = false;
   st.timer.remainingSec = 0;
@@ -315,6 +366,7 @@ function stopRestTimer(){
   save(st);
   renderTimerPill();
 }
+
 function tickTimer(){
   if(!st.timer.running) return;
   if(st.timer.remainingSec <= 0){
@@ -328,10 +380,12 @@ function tickTimer(){
   save(st);
   renderTimerPill();
 }
+
 function ensureTimerLoop(){
   if(timerInterval) return;
   timerInterval = setInterval(tickTimer, 1000);
 }
+
 function renderTimerPill(){
   if(!currentExercise) return;
   const base = `Rest ${fmtMin(currentExercise.rest)}`;
@@ -344,6 +398,18 @@ function renderTimerPill(){
 
 // ---------- Core render ----------
 function render(){
+  // Today completed card
+  const last = getLastSession();
+  const now = Date.now();
+  if(last && isSameLocalDay(last.finishedAt || last.startedAt, now)){
+    todayCompleteCard.classList.remove("hidden");
+    todayCompleteTitle.textContent = "Completed today";
+    todayCompleteMeta.textContent = `${last.name} • Week ${last.week} • ${fmtDate(last.finishedAt || last.startedAt)}`;
+    todayViewDetailsBtn.onclick = () => openHistoryDetail(last.sessionId, "today");
+  } else {
+    todayCompleteCard.classList.add("hidden");
+  }
+
   const week = weekFromCompleted(st.progression.completedSessions);
   const next = Program.cycle[st.progression.nextIndex % Program.cycle.length];
   const deload = isDeload(week);
@@ -408,6 +474,23 @@ startBtn.onclick = () => {
   setActiveTab("workout");
 };
 
+function getExerciseProgress(ex){
+  const arr = (st.active && st.active.sets && st.active.sets[ex.id]) ? st.active.sets[ex.id] : [];
+  const done = arr.filter(s => s.completed).length;
+  const total = ex.sets;
+  return { done, total };
+}
+
+function findSuggestedNextExerciseIndex(){
+  if(!st.active) return null;
+  const exs = Program.template[st.active.key];
+  for(let i=0; i<exs.length; i++){
+    const p = getExerciseProgress(exs[i]);
+    if(p.done < p.total) return i;
+  }
+  return null; // all complete
+}
+
 function renderWorkout(){
   if(!st.active){
     toast("No active session. Start from Today.");
@@ -415,37 +498,59 @@ function renderWorkout(){
     return;
   }
 
+  const suggestedIdx = findSuggestedNextExerciseIndex();
+
   workoutTitle.textContent = `${st.active.name} • Week ${st.active.week}`;
   workoutSubtitle.textContent = `Suggested ${st.active.suggested} • ${isDeload(st.active.week) ? "Deload week" : "RPE 7–8"} • Tap an exercise`;
 
   workoutList.innerHTML = "";
   const exs = Program.template[st.active.key];
 
+  let suggestedEl = null;
+
   exs.forEach((ex, exIdx) => {
     const item = document.createElement("div");
     item.className = "item";
+    item.dataset.exid = ex.id;
 
-    const arr = st.active.sets[ex.id] || [];
-    const logged = arr.filter(s => s.completed).length;
+    const {done, total} = getExerciseProgress(ex);
+    const status = (done === 0) ? "Not started" : (done < total ? "In progress" : "Complete");
+
     const w = plannedWeight(ex, st.active.week, st);
     const planText = (w==null) ? "RPE-based" : `Plan ${fmtKg(w)} ${ex.unit}`;
+
+    const nextTag = (suggestedIdx === exIdx && done < total) ? `<div class="badge nextTag">Next</div>` : "";
 
     item.innerHTML = `
       <div class="topline">
         <div class="name">${ex.name}</div>
         <div class="right">
+          ${nextTag}
           <div class="badge">${planText}</div>
-          <div class="badge">${logged}/${ex.sets}</div>
+          <div class="badge">${done}/${total} • ${status}</div>
         </div>
       </div>
       <div class="meta">${ex.sets} sets • ${ex.reps} • Rest ${fmtMin(ex.rest)}</div>
     `;
 
+    if(suggestedIdx === exIdx && done < total){
+      item.classList.add("nextSuggested");
+      suggestedEl = item;
+    }
+
     item.onclick = () => openDetail(ex, exIdx);
     workoutList.appendChild(item);
   });
+
+  if(shouldScrollToSuggested && suggestedEl){
+    shouldScrollToSuggested = false;
+    setTimeout(() => {
+      suggestedEl.scrollIntoView({behavior:"smooth", block:"center"});
+    }, 0);
+  }
 }
 
+// ---------- Detail screen (commit-to-complete) ----------
 function openDetail(ex, exIdx){
   if(!st.active) return;
 
@@ -478,11 +583,9 @@ function openDetail(ex, exIdx){
 
   renderSetRows(ex, wPlan);
 
-  setActiveTab("workout");
   paneWorkout.classList.add("hidden");
   paneDetail.classList.remove("hidden");
-  tabWorkout.classList.add("active");
-  [tabToday, tabHistory, tabSettings].forEach(t => t.classList.remove("active"));
+  setActiveTab("workout");
 }
 
 function renderSetRows(ex, wPlan){
@@ -491,9 +594,7 @@ function renderSetRows(ex, wPlan){
 
   const help = document.createElement("div");
   help.className = "helper";
-  help.textContent = (wPlan==null)
-    ? "RPE-based lifts: enter a controlled working weight for the rep range."
-    : "Auto-save is on. Complete a set by entering reps (and weight if manual). Rest timer starts automatically.";
+  help.textContent = "Auto-save is on. A set completes when you finish input (tap Done or tap outside). Timer starts on completion.";
   setsEl.appendChild(help);
 
   arr.forEach((s, idx) => {
@@ -554,6 +655,7 @@ function renderSetRows(ex, wPlan){
     setsEl.appendChild(row);
   });
 
+  // quick rest controls
   const kb = document.createElement("div");
   kb.className = "kbRow";
   kb.innerHTML = `
@@ -574,13 +676,25 @@ function renderSetRows(ex, wPlan){
   };
   el("qStop").onclick = () => stopRestTimer();
 
+  // Input handling:
+  // - oninput: save draft only
+  // - onblur/onchange: commit (normalize + potentially complete + start timer)
   setsEl.querySelectorAll("input").forEach(inp => {
-    inp.oninput = () => handleAutoSaveChange(ex, wPlan, inp);
-    inp.onchange = () => handleAutoSaveChange(ex, wPlan, inp);
+    inp.oninput = () => handleDraftChange(ex, wPlan, inp);
+
+    inp.onchange = () => handleCommit(ex, wPlan, inp);
+    inp.onblur = () => handleCommit(ex, wPlan, inp);
+
+    // allow Enter key (where available)
+    inp.onkeydown = (e) => {
+      if(e.key === "Enter"){
+        inp.blur();
+      }
+    };
   });
 }
 
-function handleAutoSaveChange(ex, wPlan, inp){
+function handleDraftChange(ex, wPlan, inp){
   const idx = Number(inp.dataset.i);
   const k = inp.dataset.k;
   const arr = st.active.sets[ex.id];
@@ -591,47 +705,12 @@ function handleAutoSaveChange(ex, wPlan, inp){
     if(inp.checked && wPlan != null){
       s.weight = fmtKg(wPlan);
     }
-    s.completed = computeCompleted(s, wPlan);
     save(st);
     renderSetRows(ex, wPlan);
     return;
   }
 
   s[k] = inp.value;
-
-  if(k === "reps"){
-    const r = normalizeInt(s.reps);
-    s.reps = (r==null) ? "" : String(r);
-  }
-  if(k === "rpe"){
-    const v = normalizeNum(s.rpe);
-    s.rpe = (v==null) ? (s.rpe ?? "8.0") : (Math.round(v*10)/10).toFixed(1);
-  }
-
-  const wasCompleted = s.completed;
-  s.completed = computeCompleted(s, wPlan);
-
-  if(!wasCompleted && s.completed){
-    if(wPlan != null && s.usedPlanned){
-      s.weight = fmtKg(wPlan);
-    } else {
-      const w = normalizeNum(s.weight);
-      s.weight = (w==null) ? "" : fmtKg(w);
-    }
-    save(st);
-    startRestTimer(ex.rest, ex.name);
-    toast(`Set ${s.setIndex} saved`);
-
-    const allDone = arr.every(x => x.completed);
-    if(allDone){
-      promptNextExercise(ex);
-    } else {
-      focusNextReps(idx + 1);
-    }
-    renderSetRows(ex, wPlan);
-    return;
-  }
-
   save(st);
 }
 
@@ -645,6 +724,66 @@ function computeCompleted(s, wPlan){
   return (w != null && w > 0);
 }
 
+function handleCommit(ex, wPlan, inp){
+  if(!st.active) return;
+  const idx = Number(inp.dataset.i);
+  const k = inp.dataset.k;
+  const arr = st.active.sets[ex.id];
+  const s = arr[idx];
+
+  if(k === "usedPlanned"){
+    // handled in draft
+    return;
+  }
+
+  // Normalize on commit (light but consistent)
+  if(k === "reps"){
+    const r = normalizeInt(s.reps);
+    s.reps = (r==null) ? "" : String(r);
+  }
+  if(k === "rpe"){
+    const v = normalizeNum(s.rpe);
+    s.rpe = (v==null) ? (s.rpe ?? "8.0") : (Math.round(v*10)/10).toFixed(1);
+  }
+  if(k === "weight"){
+    // normalize only if it's a real number, else keep empty
+    const w = normalizeNum(s.weight);
+    if(w==null) s.weight = s.weight ?? "";
+  }
+
+  const wasCompleted = s.completed;
+  s.completed = computeCompleted(s, wPlan);
+
+  // if just completed, finalize numbers, start timer, prompt next suggestion
+  if(!wasCompleted && s.completed){
+    if(wPlan != null && s.usedPlanned){
+      s.weight = fmtKg(wPlan);
+    } else {
+      const w = normalizeNum(s.weight);
+      s.weight = (w==null) ? "" : fmtKg(w);
+    }
+    const r = normalizeInt(s.reps);
+    s.reps = (r==null) ? "" : String(r);
+
+    save(st);
+
+    startRestTimer(ex.rest, ex.name);
+    toast(`Set ${s.setIndex} saved`);
+
+    const allDone = arr.every(x => x.completed);
+    renderSetRows(ex, wPlan);
+
+    if(allDone){
+      promptNextExerciseSuggestion();
+    } else {
+      focusNextReps(idx + 1);
+    }
+    return;
+  }
+
+  save(st);
+}
+
 function focusNextReps(nextSetIndexZeroBased){
   const inputs = setsEl.querySelectorAll('input[data-k="reps"]');
   if(!inputs || inputs.length === 0) return;
@@ -653,72 +792,69 @@ function focusNextReps(nextSetIndexZeroBased){
   if(next && typeof next.focus === "function") next.focus();
 }
 
-function promptNextExercise(ex){
+// Suggest next = earliest incomplete in default order
+function promptNextExerciseSuggestion(){
   if(!st.active) return;
-  const exs = Program.template[st.active.key];
-  const currentIdx = ex.__index ?? 0;
-  const nextIdx = Math.min(exs.length - 1, currentIdx + 1);
-  const isLast = (currentIdx >= exs.length - 1);
 
-  if(isLast){
+  const suggestedIdx = findSuggestedNextExerciseIndex();
+  const exs = Program.template[st.active.key];
+
+  if(suggestedIdx == null){
     showModal({
       title: "Exercise complete",
-      text: "That was the last exercise for today. You can finish the workout when ready.",
+      text: "That was the last remaining exercise for today. You can finish the workout when ready.",
       primaryText: "Finish Workout",
       primary: () => finishBtn.click(),
-      secondaryText: "Stay Here",
-      secondary: () => {}
+      secondaryText: "Back to Workout",
+      secondary: () => {
+        shouldScrollToSuggested = true;
+        backToWorkoutList();
+      },
+      tertiaryText: "Stay",
+      tertiary: () => {}
     });
     return;
   }
 
-  const nextEx = exs[nextIdx];
+  const nextEx = exs[suggestedIdx];
+
   showModal({
     title: "Exercise complete",
-    text: `Move to next: ${nextEx.name}?`,
-    primaryText: "Next Exercise",
-    primary: () => openDetail(nextEx, nextIdx),
-    secondaryText: "Stay",
-    secondary: () => {}
+    text: `Next (suggested): ${nextEx.name}`,
+    primaryText: "Next (Suggested)",
+    primary: () => openDetail(nextEx, suggestedIdx),
+    secondaryText: "Back to Workout",
+    secondary: () => {
+      shouldScrollToSuggested = true;
+      backToWorkoutList();
+    },
+    tertiaryText: "Stay",
+    tertiary: () => {}
   });
 }
 
-backBtn.onclick = () => {
+function backToWorkoutList(){
   paneDetail.classList.add("hidden");
   paneWorkout.classList.remove("hidden");
   currentExercise = null;
   renderWorkout();
   setActiveTab("workout");
-};
+}
 
-doneBtn.onclick = () => {
-  paneDetail.classList.add("hidden");
-  paneWorkout.classList.remove("hidden");
-  currentExercise = null;
-  renderWorkout();
-  setActiveTab("workout");
-};
+backBtn.onclick = () => backToWorkoutList();
+doneBtn.onclick = () => backToWorkoutList();
 
 saveAllBtn.onclick = () => {
   if(!st.active || !currentExercise) return;
-  const ex = currentExercise;
-  const wPlan = plannedWeight(ex, st.active.week, st);
-  const arr = st.active.sets[ex.id];
-
-  arr.forEach(s => { s.completed = computeCompleted(s, wPlan); });
-
-  save(st);
   toast("Saved");
-  renderSetRows(ex, wPlan);
-
-  if(arr.every(x => x.completed)){
-    promptNextExercise(ex);
-  }
+  save(st);
 };
 
+// ---------- Finish workout ----------
 finishBtn.onclick = () => {
   if(!st.active) return;
 
+  // store in history
   const finishedAt = Date.now();
   st.history.push({
     sessionId: st.active.sessionId,
@@ -731,6 +867,7 @@ finishBtn.onclick = () => {
     sets: st.active.sets
   });
 
+  // advance progression
   st.active = null;
   st.progression.completedSessions += 1;
   st.progression.nextIndex = (st.progression.nextIndex + 1) % Program.cycle.length;
@@ -749,16 +886,20 @@ finishBtn.onclick = () => {
       renderHistory();
       setActiveTab("today");
     },
-    secondaryText: "View History",
+    secondaryText: "View Details",
     secondary: () => {
-      currentExercise = null;
-      renderHistory();
-      setActiveTab("history");
+      const last = getLastSession();
+      if(last){
+        openHistoryDetail(last.sessionId, "workoutComplete");
+      } else {
+        renderHistory();
+        setActiveTab("history");
+      }
     }
   });
 };
 
-// ---------- HISTORY MANAGER ----------
+// ---------- HISTORY ----------
 historyManageBtn.onclick = () => {
   historyEditMode = !historyEditMode;
   if(!historyEditMode){
@@ -826,7 +967,6 @@ deleteSelectedBtn.onclick = () => {
     toast("No sessions selected");
     return;
   }
-
   showModal({
     title: "Delete selected?",
     text: `This will permanently delete ${count} session(s) from this phone.`,
@@ -846,12 +986,9 @@ deleteSelectedBtn.onclick = () => {
 function renderHistory(){
   exportOut.classList.add("hidden");
 
-  // toggle tools
   historyTools.classList.toggle("hidden", !historyEditMode);
   historyManageBtn.textContent = historyEditMode ? "Done" : "Manage";
-  selectionHint.textContent = historyEditMode
-    ? `Selected: ${selectedSessionIds.size}`
-    : "Select sessions, then delete.";
+  selectionHint.textContent = historyEditMode ? `Selected: ${selectedSessionIds.size}` : "Select sessions, then delete.";
 
   historyList.innerHTML = "";
 
@@ -864,13 +1001,13 @@ function renderHistory(){
   }
 
   const items = [...st.history].slice().reverse().slice(0, 60);
+
   items.forEach(sess => {
     const div = document.createElement("div");
     div.className = "item";
 
     const when = fmtDate(sess.finishedAt || sess.startedAt);
     const totalSets = Object.values(sess.sets || {}).reduce((acc, arr)=> acc + (arr?.filter(s=>s.completed).length || 0), 0);
-
     const checked = selectedSessionIds.has(sess.sessionId);
 
     if(historyEditMode){
@@ -880,9 +1017,7 @@ function renderHistory(){
           <div style="flex:1">
             <div class="topline">
               <div class="name">${sess.name}</div>
-              <div class="right">
-                <div class="badge">Week ${sess.week}</div>
-              </div>
+              <div class="right"><div class="badge">Week ${sess.week}</div></div>
             </div>
             <div class="meta">${when} • Completed sets: ${totalSets}</div>
           </div>
@@ -897,7 +1032,6 @@ function renderHistory(){
         selectionHint.textContent = `Selected: ${selectedSessionIds.size}`;
       };
 
-      // tapping row toggles too
       div.onclick = () => {
         if(checked) selectedSessionIds.delete(sess.sessionId);
         else selectedSessionIds.add(sess.sessionId);
@@ -911,11 +1045,142 @@ function renderHistory(){
         </div>
         <div class="meta">${when} • Completed sets: ${totalSets}</div>
       `;
-      div.onclick = () => toast(`${sess.name} • Week ${sess.week} • ${totalSets} sets completed`);
+      div.onclick = () => openHistoryDetail(sess.sessionId, "history");
     }
 
     historyList.appendChild(div);
   });
+}
+
+function getLastSession(){
+  if(!st.history || st.history.length === 0) return null;
+  return st.history[st.history.length - 1];
+}
+
+function openHistoryDetail(sessionId, source){
+  const sess = st.history.find(s => s.sessionId === sessionId);
+  if(!sess){
+    toast("Session not found");
+    renderHistory();
+    setActiveTab("history");
+    return;
+  }
+
+  currentHistorySessionId = sessionId;
+  historyExpanded = {}; // reset per open
+
+  histDetailTitle.textContent = sess.name;
+  histDetailMeta.textContent = `Week ${sess.week} • ${fmtDate(sess.finishedAt || sess.startedAt)}`;
+
+  const totalSets = Object.values(sess.sets || {}).reduce((acc, arr)=> acc + (arr?.filter(s=>s.completed).length || 0), 0);
+  histDetailSummaryPill.textContent = `Completed sets: ${totalSets}`;
+
+  histDetailDeleteBtn.onclick = () => {
+    showModal({
+      title: "Delete this session?",
+      text: "This will permanently delete the session from this phone.",
+      primaryText: "Delete",
+      primary: () => {
+        st.history = st.history.filter(s => s.sessionId !== sessionId);
+        save(st);
+        toast("Deleted");
+        currentHistorySessionId = null;
+        render();
+        renderHistory();
+        setActiveTab("history");
+      },
+      secondaryText: "Cancel",
+      secondary: () => {}
+    });
+  };
+
+  histDetailBackBtn.onclick = () => {
+    currentHistorySessionId = null;
+    renderHistory();
+    setActiveTab("history");
+  };
+
+  renderHistoryDetailBody(sess);
+
+  setActiveTab("historyDetail");
+}
+
+function renderHistoryDetailBody(sess){
+  histDetailBody.innerHTML = "";
+
+  const exs = Program.template[sess.key] || [];
+  const order = exs.length ? exs : Object.keys(sess.sets || {}).map(id => ({id, name:id, sets: (sess.sets?.[id]?.length||0), reps:"", rest:0, unit:"", scale:{type:"rpe"}}));
+
+  order.forEach(ex => {
+    const sets = (sess.sets && sess.sets[ex.id]) ? sess.sets[ex.id] : [];
+    const done = sets.filter(s => s.completed).length;
+    const total = ex.sets || sets.length;
+
+    const item = document.createElement("div");
+    item.className = "item";
+
+    const expanded = !!historyExpanded[ex.id];
+    const chevron = expanded ? "▾" : "▸";
+
+    item.innerHTML = `
+      <div class="accHeader">
+        <div style="flex:1">
+          <div class="accTitle">${ex.name}</div>
+          <div class="accMeta">${done}/${total} sets • ${ex.reps ? ex.reps : ""} ${ex.reps ? "•" : ""} ${ex.unit ? ex.unit : ""}</div>
+        </div>
+        <div class="accChevron">${chevron}</div>
+      </div>
+      ${expanded ? `
+        <div class="accBody">
+          ${renderSetsTable(sets)}
+        </div>
+      ` : ``}
+    `;
+
+    item.onclick = () => {
+      historyExpanded[ex.id] = !historyExpanded[ex.id];
+      renderHistoryDetailBody(sess);
+    };
+
+    histDetailBody.appendChild(item);
+  });
+}
+
+function renderSetsTable(sets){
+  if(!sets || sets.length === 0){
+    return `<div class="s">No logged sets</div>`;
+  }
+
+  const rows = sets.map(s => {
+    const w = (s.weight ?? "").toString();
+    const r = (s.reps ?? "").toString();
+    const rpe = (s.rpe ?? "").toString();
+    const ok = s.completed ? "Yes" : "No";
+    return `
+      <tr>
+        <td>${s.setIndex ?? ""}</td>
+        <td>${w}</td>
+        <td>${r}</td>
+        <td>${rpe}</td>
+        <td>${ok}</td>
+      </tr>
+    `;
+  }).join("");
+
+  return `
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Set</th>
+          <th>Weight</th>
+          <th>Reps</th>
+          <th>RPE</th>
+          <th>Done</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
 }
 
 // ---------- SETTINGS ----------
@@ -925,6 +1190,7 @@ function renderSettings(){
   const b1 = bench1rm(st.settings.benchW, st.settings.benchR);
   bench1rmEl.textContent = `Bench 1RM est: ${b1.toFixed(1)} kg`;
 }
+
 saveSettingsBtn.onclick = () => {
   const w = normalizeNum(String(benchW.value));
   const r = normalizeInt(String(benchR.value));
