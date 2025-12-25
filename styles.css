@@ -164,6 +164,7 @@ body{
   border:1px solid var(--stroke);
   background:#0F1318;
   color:var(--text);
+  font-size:16px; /* iOS zoom prevention */
 }
 
 .helper{
@@ -211,6 +212,7 @@ body{
   border:1px solid var(--stroke);
   background:#0F1318;
   color:var(--text);
+  font-size:16px; /* iOS zoom prevention */
 }
 .setrow input:disabled{ opacity:0.6; }
 
@@ -242,6 +244,59 @@ body{
   width:18px;
   height:18px;
   accent-color: var(--accent);
+}
+
+/* Suggested next exercise highlight */
+.item.nextSuggested{
+  box-shadow: 0 0 0 1px rgba(110,231,183,0.45);
+  background: rgba(110,231,183,0.06);
+}
+.badge.nextTag{
+  color: var(--text);
+  background: rgba(110,231,183,0.08);
+  box-shadow: 0 0 0 1px rgba(110,231,183,0.35);
+}
+
+/* Accordion */
+.accHeader{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:center;
+}
+.accTitle{
+  font-weight:650;
+}
+.accMeta{
+  color:var(--muted);
+  font-size:12px;
+  margin-top:6px;
+  line-height:1.35;
+}
+.accChevron{
+  color:var(--muted);
+  font-size:14px;
+}
+.accBody{
+  margin-top:10px;
+  border-top: 1px solid rgba(32,39,52,0.55);
+  padding-top:10px;
+}
+.table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:12px;
+}
+.table th{
+  text-align:left;
+  color:var(--muted);
+  font-weight:650;
+  padding:6px 0;
+}
+.table td{
+  padding:8px 0;
+  border-top: 1px solid rgba(32,39,52,0.35);
+  vertical-align:top;
 }
 
 .toast{
@@ -285,6 +340,7 @@ body{
   border:1px solid var(--stroke);
   background:#0B0D10;
   color:var(--text);
+  font-size:16px; /* iOS zoom prevention */
 }
 .modalActions{display:flex; gap:10px; margin-top:12px}
 .modalActions .btn{flex:1}
