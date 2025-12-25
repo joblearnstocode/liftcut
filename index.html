@@ -5,14 +5,17 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#0B0D10" />
   <title>LiftCut</title>
+
   <link rel="manifest" href="manifest.json" />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="favicon.ico">
+  <link rel="stylesheet" href="styles.css?v=100" />
 </head>
 <body>
   <header class="top">
     <div class="title">LiftCut</div>
     <div class="sub" id="subhead">Loading…</div>
-    <nav class="tabs" aria-label="Primary">
+
+    <nav class="tabs">
       <button class="tab active" id="tabToday">Today</button>
       <button class="tab" id="tabWorkout">Workout</button>
       <button class="tab" id="tabHistory">History</button>
@@ -21,16 +24,16 @@
   </header>
 
   <main class="wrap">
+
     <!-- TODAY -->
     <section id="paneToday" class="pane">
-      <!-- Completed today card (shown only if last session is today) -->
       <section class="card hidden" id="todayCompleteCard">
         <div class="row">
           <div>
-            <div class="h" id="todayCompleteTitle">Completed today</div>
+            <div class="h">Completed today</div>
             <div class="s" id="todayCompleteMeta">—</div>
           </div>
-          <button class="btn ghost" id="todayViewDetailsBtn">View details</button>
+          <button class="btn ghost" id="todayViewDetailsBtn">View</button>
         </div>
       </section>
 
@@ -53,7 +56,7 @@
         <div class="row">
           <div>
             <div class="h" id="workoutTitle">Workout</div>
-            <div class="s" id="workoutSubtitle">Tap an exercise to log sets</div>
+            <div class="s" id="workoutSubtitle">—</div>
           </div>
           <button class="btn ghost" id="finishBtn">Finish</button>
         </div>
@@ -61,7 +64,7 @@
       <section class="list" id="workoutList"></section>
     </section>
 
-    <!-- EXERCISE DETAIL -->
+    <!-- DETAIL -->
     <section id="paneDetail" class="pane hidden">
       <section class="card">
         <div class="row">
@@ -89,64 +92,11 @@
       </section>
     </section>
 
-    <!-- HISTORY LIST -->
+    <!-- HISTORY -->
     <section id="paneHistory" class="pane hidden">
       <section class="card">
-        <div class="row">
-          <div>
-            <div class="h">History</div>
-            <div class="s">Saved on this phone only</div>
-          </div>
-          <div class="row tight" style="justify-content:flex-end">
-            <button class="btn ghost" id="historyManageBtn">Manage</button>
-            <button class="btn ghost" id="exportBtn">Export</button>
-          </div>
-        </div>
-
-        <div class="divider"></div>
-
-        <!-- Manager tools -->
-        <div class="hidden" id="historyTools">
-          <div class="row" style="align-items:flex-start">
-            <div class="list" style="flex:1">
-              <div class="kbRow">
-                <button class="quickBtn" id="selectByWeekBtn">Select by Week</button>
-                <button class="quickBtn" id="selectByDateBtn">Select by Date</button>
-                <button class="quickBtn" id="clearSelectionBtn">Clear selection</button>
-              </div>
-              <div class="helper" id="selectionHint">Select sessions, then delete.</div>
-            </div>
-            <button class="btn" id="deleteSelectedBtn">Delete</button>
-          </div>
-          <div class="divider"></div>
-        </div>
-
+        <div class="h">History</div>
         <div class="list" id="historyList"></div>
-        <pre class="hidden" id="exportOut"></pre>
-      </section>
-    </section>
-
-    <!-- HISTORY DETAIL -->
-    <section id="paneHistoryDetail" class="pane hidden">
-      <section class="card">
-        <div class="row">
-          <div>
-            <div class="h" id="histDetailTitle">Session</div>
-            <div class="s" id="histDetailMeta">—</div>
-          </div>
-          <button class="btn ghost" id="histDetailBackBtn">Back</button>
-        </div>
-
-        <div class="divider"></div>
-
-        <div class="row">
-          <div class="pill subtle" id="histDetailSummaryPill">—</div>
-          <button class="btn ghost" id="histDetailDeleteBtn">Delete</button>
-        </div>
-
-        <div class="divider"></div>
-
-        <div class="list" id="histDetailBody"></div>
       </section>
     </section>
 
@@ -154,40 +104,28 @@
     <section id="paneSettings" class="pane hidden">
       <section class="card">
         <div class="h">Settings</div>
-        <div class="grid">
-          <label class="field">
-            <span>Bench working weight (total kg)</span>
-            <input id="benchW" inputmode="decimal" />
-          </label>
-          <label class="field">
-            <span>Bench reps</span>
-            <input id="benchR" inputmode="numeric" />
-          </label>
-        </div>
-
+        <label class="field">
+          <span>Bench working weight (kg)</span>
+          <input id="benchW" inputmode="decimal">
+        </label>
+        <label class="field">
+          <span>Bench reps</span>
+          <input id="benchR" inputmode="numeric">
+        </label>
         <div class="row">
-          <div class="s" id="bench1rm">Bench 1RM est: —</div>
+          <div class="s" id="bench1rm">—</div>
           <button class="btn ghost" id="saveSettingsBtn">Save</button>
-        </div>
-
-        <div class="divider"></div>
-        <div class="smallblock">
-          <div class="smalltitle">Privacy</div>
-          <div class="smalltext">
-            No login. No cloud. No trackers. Your data stays on this iPhone. Export is manual.
-          </div>
         </div>
       </section>
     </section>
 
-    <!-- TOAST -->
     <div class="toast hidden" id="toast"></div>
   </main>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=100"></script>
   <script>
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("./sw.js").catch(()=>{});
+      navigator.serviceWorker.register("./sw.js?v=100");
     }
   </script>
 </body>
