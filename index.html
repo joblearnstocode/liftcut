@@ -5,45 +5,31 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#0B0D10" />
   <title>LiftCut</title>
-
-  <link rel="manifest" href="manifest.json" />
-  <link rel="icon" href="favicon.ico">
-  <link rel="stylesheet" href="styles.css?v=100" />
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <header class="top">
     <div class="title">LiftCut</div>
-    <div class="sub" id="subhead">Loading…</div>
+    <div class="sub" id="subhead">Ready</div>
 
-    <nav class="tabs">
-      <button class="tab active" id="tabToday">Today</button>
-      <button class="tab" id="tabWorkout">Workout</button>
-      <button class="tab" id="tabHistory">History</button>
-      <button class="tab" id="tabSettings">Settings</button>
+    <nav class="tabs" aria-label="Primary">
+      <button class="tab active" id="tabToday" type="button">Today</button>
+      <button class="tab" id="tabWorkout" type="button">Workout</button>
+      <button class="tab" id="tabHistory" type="button">History</button>
+      <button class="tab" id="tabSettings" type="button">Settings</button>
     </nav>
   </header>
 
   <main class="wrap">
-
     <!-- TODAY -->
     <section id="paneToday" class="pane">
-      <section class="card hidden" id="todayCompleteCard">
-        <div class="row">
-          <div>
-            <div class="h">Completed today</div>
-            <div class="s" id="todayCompleteMeta">—</div>
-          </div>
-          <button class="btn ghost" id="todayViewDetailsBtn">View</button>
-        </div>
-      </section>
-
       <section class="card">
         <div class="row">
           <div>
             <div class="h" id="sessionName">—</div>
             <div class="s" id="sessionMeta">—</div>
           </div>
-          <button class="btn" id="startBtn">Start</button>
+          <button class="btn" id="startBtn" type="button">Start</button>
         </div>
         <div class="divider"></div>
         <div class="list" id="exercisePreview"></div>
@@ -56,9 +42,9 @@
         <div class="row">
           <div>
             <div class="h" id="workoutTitle">Workout</div>
-            <div class="s" id="workoutSubtitle">—</div>
+            <div class="s" id="workoutSubtitle">Tap an exercise to log sets</div>
           </div>
-          <button class="btn ghost" id="finishBtn">Finish</button>
+          <button class="btn ghost" id="finishBtn" type="button">Finish</button>
         </div>
       </section>
       <section class="list" id="workoutList"></section>
@@ -72,7 +58,7 @@
             <div class="h" id="detailTitle">Exercise</div>
             <div class="s" id="detailMeta">—</div>
           </div>
-          <button class="btn ghost" id="backBtn">Back</button>
+          <button class="btn ghost" id="backBtn" type="button">Back</button>
         </div>
 
         <div class="divider"></div>
@@ -86,8 +72,8 @@
 
         <div class="divider"></div>
         <div class="row">
-          <button class="btn ghost" id="saveAllBtn">Save</button>
-          <button class="btn" id="doneBtn">Done</button>
+          <button class="btn ghost" id="saveAllBtn" type="button">Save</button>
+          <button class="btn" id="doneBtn" type="button">Done</button>
         </div>
       </section>
     </section>
@@ -95,8 +81,16 @@
     <!-- HISTORY -->
     <section id="paneHistory" class="pane hidden">
       <section class="card">
-        <div class="h">History</div>
+        <div class="row">
+          <div>
+            <div class="h">History</div>
+            <div class="s">Tap a session to view a quick summary</div>
+          </div>
+          <button class="btn ghost" id="exportBtn" type="button">Export</button>
+        </div>
+        <div class="divider"></div>
         <div class="list" id="historyList"></div>
+        <pre class="hidden" id="exportOut"></pre>
       </section>
     </section>
 
@@ -104,17 +98,26 @@
     <section id="paneSettings" class="pane hidden">
       <section class="card">
         <div class="h">Settings</div>
-        <label class="field">
-          <span>Bench working weight (kg)</span>
-          <input id="benchW" inputmode="decimal">
-        </label>
-        <label class="field">
-          <span>Bench reps</span>
-          <input id="benchR" inputmode="numeric">
-        </label>
+
+        <div class="grid">
+          <label class="field">
+            <span>Bench working weight (total kg)</span>
+            <input id="benchW" inputmode="decimal" />
+          </label>
+          <label class="field">
+            <span>Bench reps</span>
+            <input id="benchR" inputmode="numeric" />
+          </label>
+        </div>
+
         <div class="row">
-          <div class="s" id="bench1rm">—</div>
-          <button class="btn ghost" id="saveSettingsBtn">Save</button>
+          <div class="s" id="bench1rm">Bench 1RM est: —</div>
+          <button class="btn ghost" id="saveSettingsBtn" type="button">Save</button>
+        </div>
+
+        <div class="divider"></div>
+        <div class="s">
+          Local-only. No login. No cloud. No third-party.
         </div>
       </section>
     </section>
@@ -122,11 +125,6 @@
     <div class="toast hidden" id="toast"></div>
   </main>
 
-  <script src="app.js?v=100"></script>
-  <script>
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("./sw.js?v=100");
-    }
-  </script>
+  <script src="app.js"></script>
 </body>
 </html>
