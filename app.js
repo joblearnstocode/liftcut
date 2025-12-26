@@ -1,4 +1,4 @@
-const LS_KEY = "liftcut_state_baseline_v1";
+const LS_KEY = "liftcut_state_v2_commit_timer";
 
 const Program = {
   cycle: [
@@ -60,7 +60,8 @@ function defaultState(){
     },
     progression: { completedSessions: 0, nextIndex: 0 },
     active: null,
-    history: []
+    history: [],
+    timer: { running:false, remaining:0, label:"" }
   };
 }
 
@@ -112,6 +113,7 @@ let toastTimer = null;
 
 let currentExercise = null;
 
+// ---------- Tabs ----------
 function setActiveTab(which){
   [tabToday, tabWorkout, tabHistory, tabSettings].forEach(t => t.classList.remove("active"));
   [paneToday, paneWorkout, paneDetail, paneHistory, paneSettings].forEach(p => p.classList.add("hidden"));
@@ -135,6 +137,7 @@ function toast(msg){
   toastTimer = setTimeout(() => toastEl.classList.add("hidden"), 1500);
 }
 
+// ---------- Math / planning ----------
 function bench1rm(w,r){ return w*(1 + (r/30)); }
 
 function plannedWeight(ex){
@@ -150,13 +153,77 @@ function plannedWeight(ex){
 
 function fmtKg(x){ return (x==null || !isFinite(x)) ? "—" : Number(x).toFixed(1); }
 function fmtMin(sec){ return `${Math.round(sec/60)}m`; }
+function fmtClock(sec){
+  const m = Math.floor(sec/60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2,"0")}`;
+}
 function fmtDate(ts){
   const d = new Date(ts);
   const day = d.toLocaleDateString(undefined, { weekday:"short", month:"short", day:"numeric" });
   const time = d.toLocaleTimeString(undefined, { hour:"numeric", minute:"2-digit" });
   return `${day} • ${time}`;
 }
+function normalizeNum(v){
+  const n = parseFloat(String(v).replace(",", "."));
+  return isFinite(n) ? n : null;
+}
+function normalizeInt(v){
+  const n = parseInt(String(v), 10);
+  return isFinite(n) ? n : null;
+}
 
+// ---------- Timer ----------
+let timerInterval = null;
+
+function ensureTimer(){
+  if(timerInterval) return;
+  timerInterval = setInterval(() => {
+    if(!st.timer.running) return;
+    if(st.timer.remaining <= 0){
+      st.timer.running = false;
+      save(st);
+      renderRestPill();
+      toast("Rest complete");
+      return;
+    }
+    st.timer.remaining -= 1;
+    save(st);
+    renderRestPill();
+  }, 1000);
+}
+
+function startRest(seconds, label){
+  ensureTimer();
+  st.timer.running = true;
+  st.timer.remaining = Math.max(0, Math.round(seconds));
+  st.timer.label = label || "Rest";
+  save(st);
+  renderRestPill();
+}
+
+function stopRest(){
+  st.timer.running = false;
+  st.timer.remaining = 0;
+  st.timer.label = "";
+  save(st);
+  renderRestPill();
+}
+
+function renderRestPill(){
+  if(!currentExercise){
+    restPill.textContent = "Rest —";
+    return;
+  }
+  const base = `Rest ${fmtMin(currentExercise.rest)}`;
+  if(st.timer.running){
+    restPill.textContent = `${base} • ${fmtClock(st.timer.remaining)}`;
+  } else {
+    restPill.textContent = base;
+  }
+}
+
+// ---------- Session ----------
 function ensureActive(){
   if(st.active) return;
   const next = Program.cycle[st.progression.nextIndex % Program.cycle.length];
@@ -177,6 +244,7 @@ startBtn.onclick = () => {
   setActiveTab("workout");
 };
 
+// ---------- Renders ----------
 function render(){
   const next = Program.cycle[st.progression.nextIndex % Program.cycle.length];
   const b1 = bench1rm(st.settings.benchW, st.settings.benchR);
@@ -227,6 +295,7 @@ function renderWorkout(){
   });
 }
 
+// ---------- Detail (commit-to-complete) ----------
 function openDetail(ex){
   currentExercise = ex;
 
@@ -246,21 +315,31 @@ function openDetail(ex){
   detailTitle.textContent = ex.name;
   detailMeta.textContent = `${ex.sets} sets • ${ex.reps}`;
   planPill.textContent = wPlan==null ? "RPE-based" : `Plan ${fmtKg(wPlan)} ${ex.unit}`;
-  restPill.textContent = `Rest ${fmtMin(ex.rest)}`;
+  renderRestPill();
 
-  renderSets(ex);
+  renderSets(ex, wPlan);
   setActiveTab("detail");
 }
 
-function renderSets(ex){
+function computeCompleted(s){
+  const reps = normalizeInt(s.reps);
+  const w = normalizeNum(s.weight);
+  return (reps != null && reps > 0) && (w != null && w > 0);
+}
+
+function renderSets(ex, wPlan){
   setsEl.innerHTML = "";
+
   const arr = st.active.sets[ex.id];
 
   arr.forEach((s, idx) => {
     const row = document.createElement("div");
     row.className = "setrow";
     row.innerHTML = `
-      <div class="label">Set ${s.setIndex}</div>
+      <div class="label">
+        <div>Set ${s.setIndex}</div>
+        <div class="doneDot ${s.completed ? "on":""}"></div>
+      </div>
       <input inputmode="decimal" placeholder="Weight" value="${s.weight || ""}" data-i="${idx}" data-k="weight" />
       <input inputmode="numeric" placeholder="Reps" value="${s.reps || ""}" data-i="${idx}" data-k="reps" />
       <input inputmode="decimal" placeholder="RPE" value="${s.rpe || "8.0"}" data-i="${idx}" data-k="rpe" />
@@ -268,6 +347,24 @@ function renderSets(ex){
     setsEl.appendChild(row);
   });
 
+  const kb = document.createElement("div");
+  kb.className = "kbRow";
+  kb.innerHTML = `
+    <button class="quickBtn" id="qRest" type="button">Start Rest (${fmtMin(ex.rest)})</button>
+    <button class="quickBtn" id="q90" type="button">+90s</button>
+    <button class="quickBtn" id="qStop" type="button">Stop</button>
+  `;
+  setsEl.appendChild(kb);
+
+  el("qRest").onclick = () => startRest(ex.rest, ex.name);
+  el("q90").onclick = () => {
+    if(st.timer.running) startRest(st.timer.remaining + 90, st.timer.label);
+    else startRest(90, "Rest");
+    toast("+90s");
+  };
+  el("qStop").onclick = () => stopRest();
+
+  // draft-save on input
   setsEl.querySelectorAll("input").forEach(inp => {
     inp.oninput = () => {
       const i = Number(inp.dataset.i);
@@ -275,17 +372,41 @@ function renderSets(ex){
       st.active.sets[ex.id][i][k] = inp.value;
       save(st);
     };
-    inp.onblur = () => {
+
+    // commit on blur/change/enter
+    const commit = () => {
       const i = Number(inp.dataset.i);
       const s = st.active.sets[ex.id][i];
-      const reps = parseInt(s.reps, 10);
-      const weight = parseFloat(String(s.weight).replace(",", "."));
-      if(isFinite(reps) && reps > 0 && (isFinite(weight) || s.weight === "")){
-        s.completed = true;
+
+      if(inp.dataset.k === "reps"){
+        const r = normalizeInt(s.reps);
+        s.reps = (r==null) ? "" : String(r);
       }
+      if(inp.dataset.k === "weight"){
+        const w = normalizeNum(s.weight);
+        s.weight = (w==null) ? "" : fmtKg(w);
+      }
+      if(inp.dataset.k === "rpe"){
+        const rpe = normalizeNum(s.rpe);
+        s.rpe = (rpe==null) ? (s.rpe || "8.0") : (Math.round(rpe*10)/10).toFixed(1);
+      }
+
+      const was = s.completed;
+      s.completed = computeCompleted(s);
+
       save(st);
-      renderWorkout();
+      renderWorkout(); // update progress counts
+
+      if(!was && s.completed){
+        startRest(ex.rest, ex.name);
+        toast(`Set ${s.setIndex} complete`);
+        renderSets(ex, wPlan); // update dot + normalized values
+      }
     };
+
+    inp.onblur = commit;
+    inp.onchange = commit;
+    inp.onkeydown = (e) => { if(e.key === "Enter"){ inp.blur(); } };
   });
 }
 
@@ -293,6 +414,7 @@ backBtn.onclick = () => { renderWorkout(); setActiveTab("workout"); };
 doneBtn.onclick = () => { renderWorkout(); setActiveTab("workout"); };
 saveAllBtn.onclick = () => { save(st); toast("Saved"); };
 
+// ---------- Finish ----------
 finishBtn.onclick = () => {
   if(!st.active) return;
   st.history.push({
@@ -306,6 +428,7 @@ finishBtn.onclick = () => {
   st.active = null;
   st.progression.completedSessions += 1;
   st.progression.nextIndex = (st.progression.nextIndex + 1) % Program.cycle.length;
+  st.timer = { running:false, remaining:0, label:"" };
   save(st);
   render();
   renderHistory();
@@ -313,6 +436,7 @@ finishBtn.onclick = () => {
   toast("Workout saved");
 };
 
+// ---------- History ----------
 function renderHistory(){
   exportOut.classList.add("hidden");
   historyList.innerHTML = "";
@@ -346,6 +470,7 @@ exportBtn.onclick = () => {
   }
 };
 
+// ---------- Settings ----------
 function renderSettings(){
   benchW.value = st.settings.benchW;
   benchR.value = st.settings.benchR;
@@ -353,9 +478,9 @@ function renderSettings(){
 }
 
 saveSettingsBtn.onclick = () => {
-  const w = parseFloat(String(benchW.value).replace(",", "."));
-  const r = parseInt(benchR.value, 10);
-  if(!isFinite(w) || w<=0 || !isFinite(r) || r<=0){ toast("Enter valid bench"); return; }
+  const w = normalizeNum(benchW.value);
+  const r = normalizeInt(benchR.value);
+  if(w==null || w<=0 || r==null || r<=0){ toast("Enter valid bench"); return; }
   st.settings.benchW = w;
   st.settings.benchR = r;
   save(st);
@@ -364,12 +489,14 @@ saveSettingsBtn.onclick = () => {
   toast("Saved");
 };
 
+// ---------- Storage ----------
 function load(){
   try{
     const raw = localStorage.getItem(LS_KEY);
     if(!raw) return defaultState();
     const parsed = JSON.parse(raw);
     if(!parsed.history) parsed.history = [];
+    if(!parsed.timer) parsed.timer = { running:false, remaining:0, label:"" };
     return parsed;
   }catch{ return defaultState(); }
 }
