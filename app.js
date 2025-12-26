@@ -1,51 +1,383 @@
-window.onerror = function(msg, src, line, col, err){
-  document.body.innerHTML = `
-    <div style="padding:16px;font-family:system-ui;background:#0B0D10;color:#E8EEF8">
-      <h2>LiftCut Error</h2>
-      <pre>${msg}\n${src}:${line}:${col}</pre>
-    </div>`;
-  return true;
+const LS_KEY = "liftcut_state_baseline_v1";
+
+const Program = {
+  cycle: [
+    { name:"Upper A", suggested:"Mon", key:"UA" },
+    { name:"Lower A", suggested:"Tue", key:"LA" },
+    { name:"Upper B (Push)", suggested:"Thu", key:"UB" },
+    { name:"Upper C (Pull)", suggested:"Fri" , key:"UC" },
+    { name:"Lower B", suggested:"Sat", key:"LB" }
+  ],
+  template: {
+    UA: [
+      ex("bench","Barbell Bench Press",3,"8–10",180,"kg",{type:"benchBase"}),
+      ex("row","Bent-Over Barbell Row",3,"8–10",180,"kg",{type:"benchMult", mult:"rowMult"}),
+      ex("ohp","Overhead Press (Barbell)",3,"8–10",180,"kg",{type:"benchMult", mult:"ohpMult"}),
+      ex("latpd","Lat Pulldown / Assist",3,"8–10",150,"stack",{type:"rpe"}),
+      ex("hc","Hammer Curl (DB)",2,"10–12",90,"kg/hand",{type:"rpe"}),
+      ex("tpd","Triceps Pushdown (Cable)",2,"10–12",90,"stack",{type:"rpe"})
+    ],
+    LA: [
+      ex("squat","Back Squat",3,"8–10",210,"kg",{type:"benchMult", mult:"squatMult"}),
+      ex("rdl","Romanian Deadlift",3,"8–12",180,"kg",{type:"benchMult", mult:"rdlMult"}),
+      ex("lp","Leg Press",3,"10–12",150,"machine",{type:"rpe"}),
+      ex("lunge","Walking Lunge (DB)",2,"12 steps/leg",120,"kg/hand",{type:"rpe"}),
+      ex("calf","Standing Calf Raise",3,"12–15",90,"machine",{type:"rpe"})
+    ],
+    UB: [
+      ex("incdb","Incline DB Press",3,"8–12",150,"kg/hand",{type:"rpe"}),
+      ex("fly","Seated Cable Fly (High-to-Low)",3,"10–15",120,"stack",{type:"rpe"}),
+      ex("latraise","Lateral Raise (DB)",3,"12–15",90,"kg/hand",{type:"rpe"}),
+      ex("toh","Overhead Triceps Extension (Cable)",3,"10–12",120,"stack",{type:"rpe"}),
+      ex("facepull","Face Pull (optional)",2,"12–15",90,"stack",{type:"rpe"})
+    ],
+    UC: [
+      ex("deadlift","Deadlift (Conventional/Trap)",3,"6–8",240,"kg",{type:"benchMult", mult:"deadliftMult"}),
+      ex("pull","Pull-ups / Lat Pulldown",3,"6–10",150,"stack/added",{type:"rpe"}),
+      ex("csrow","Chest-Supported Row",3,"10",150,"kg",{type:"rpe"}),
+      ex("latrow","45° Cable Lat Row",2,"12",120,"stack",{type:"rpe"}),
+      ex("reardelt","Rear Delt Cable Fly (45°)",2,"12–15",90,"stack",{type:"rpe"}),
+      ex("curl","Incline DB Curl",3,"8–12",90,"kg/hand",{type:"rpe"})
+    ],
+    LB: [
+      ex("hipthrust","Hip Thrust",3,"8–12",180,"kg",{type:"benchMult", mult:"hipThrustMult"}),
+      ex("bulg","Bulgarian Split Squat (DB)",2,"10/leg",120,"kg/hand",{type:"rpe"}),
+      ex("legcurl","Seated Leg Curl",3,"10–15",120,"stack",{type:"rpe"}),
+      ex("legext","Leg Extension",3,"12–15",90,"stack",{type:"rpe"}),
+      ex("calf2","Seated Calf Raise",3,"12–15",90,"machine",{type:"rpe"})
+    ]
+  }
 };
 
-const $ = id => document.getElementById(id);
-const LS = "liftcut_clean_v1";
+function ex(id,name,sets,reps,rest,unit,scale){ return {id,name,sets,reps,rest,unit,scale}; }
 
-let state = JSON.parse(localStorage.getItem(LS)) || {
-  benchW:50,
-  benchR:12
-};
-
-function save(){ localStorage.setItem(LS, JSON.stringify(state)); }
-
-function bench1rm(w,r){ return (w*(1+r/30)).toFixed(1); }
-
-$("benchW").value = state.benchW;
-$("benchR").value = state.benchR;
-$("bench1rm").textContent = `Bench 1RM est: ${bench1rm(state.benchW,state.benchR)} kg`;
-
-$("saveSettingsBtn").onclick = () => {
-  state.benchW = parseFloat($("benchW").value)||state.benchW;
-  state.benchR = parseInt($("benchR").value)||state.benchR;
-  save();
-  $("bench1rm").textContent = `Bench 1RM est: ${bench1rm(state.benchW,state.benchR)} kg`;
-};
-
-$("startBtn").onclick = () => alert("Workout started — base system OK");
-
-["Today","Workout","History","Settings"].forEach(name=>{
-  $("tab"+name).onclick = ()=>{
-    ["paneToday","paneWorkout","paneHistory","paneSettings"].forEach(p=>$(p).classList.add("hidden"));
-    $("pane"+name).classList.remove("hidden");
-    document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
-    $("tab"+name).classList.add("active");
+function defaultState(){
+  return {
+    settings: {
+      benchW: 50,
+      benchR: 12,
+      mult: { squatMult:0.85, deadliftMult:0.95, rdlMult:0.75, hipThrustMult:0.90, ohpMult:0.45, rowMult:0.70 }
+    },
+    progression: { completedSessions: 0, nextIndex: 0 },
+    active: null,
+    history: []
   };
-});
+}
 
-$("sessionName").textContent = "Upper A";
-$("sessionMeta").textContent = "Suggested Monday";
+let st = load();
 
-$("exercisePreview").innerHTML = `
-  <div class="item">Bench Press</div>
-  <div class="item">Row</div>
-  <div class="item">Overhead Press</div>
-`;
+// UI refs
+const subhead = el("subhead");
+const tabToday = el("tabToday");
+const tabWorkout = el("tabWorkout");
+const tabHistory = el("tabHistory");
+const tabSettings = el("tabSettings");
+
+const paneToday = el("paneToday");
+const paneWorkout = el("paneWorkout");
+const paneDetail = el("paneDetail");
+const paneHistory = el("paneHistory");
+const paneSettings = el("paneSettings");
+
+const sessionNameEl = el("sessionName");
+const sessionMetaEl = el("sessionMeta");
+const startBtn = el("startBtn");
+const exercisePreview = el("exercisePreview");
+
+const workoutTitle = el("workoutTitle");
+const workoutSubtitle = el("workoutSubtitle");
+const workoutList = el("workoutList");
+const finishBtn = el("finishBtn");
+
+const detailTitle = el("detailTitle");
+const detailMeta = el("detailMeta");
+const planPill = el("planPill");
+const restPill = el("restPill");
+const backBtn = el("backBtn");
+const setsEl = el("sets");
+const saveAllBtn = el("saveAllBtn");
+const doneBtn = el("doneBtn");
+
+const historyList = el("historyList");
+const exportBtn = el("exportBtn");
+const exportOut = el("exportOut");
+
+const benchW = el("benchW");
+const benchR = el("benchR");
+const bench1rmEl = el("bench1rm");
+const saveSettingsBtn = el("saveSettingsBtn");
+
+const toastEl = el("toast");
+let toastTimer = null;
+
+let currentExercise = null;
+
+function setActiveTab(which){
+  [tabToday, tabWorkout, tabHistory, tabSettings].forEach(t => t.classList.remove("active"));
+  [paneToday, paneWorkout, paneDetail, paneHistory, paneSettings].forEach(p => p.classList.add("hidden"));
+
+  if(which==="today"){ tabToday.classList.add("active"); paneToday.classList.remove("hidden"); }
+  if(which==="workout"){ tabWorkout.classList.add("active"); paneWorkout.classList.remove("hidden"); }
+  if(which==="detail"){ tabWorkout.classList.add("active"); paneDetail.classList.remove("hidden"); }
+  if(which==="history"){ tabHistory.classList.add("active"); paneHistory.classList.remove("hidden"); }
+  if(which==="settings"){ tabSettings.classList.add("active"); paneSettings.classList.remove("hidden"); }
+}
+
+tabToday.onclick = () => { render(); setActiveTab("today"); };
+tabWorkout.onclick = () => { if(st.active){ renderWorkout(); setActiveTab("workout"); } else { setActiveTab("today"); } };
+tabHistory.onclick = () => { renderHistory(); setActiveTab("history"); };
+tabSettings.onclick = () => { renderSettings(); setActiveTab("settings"); };
+
+function toast(msg){
+  if(toastTimer) clearTimeout(toastTimer);
+  toastEl.textContent = msg;
+  toastEl.classList.remove("hidden");
+  toastTimer = setTimeout(() => toastEl.classList.add("hidden"), 1500);
+}
+
+function bench1rm(w,r){ return w*(1 + (r/30)); }
+
+function plannedWeight(ex){
+  const b1 = bench1rm(st.settings.benchW, st.settings.benchR);
+  if(ex.scale.type==="rpe") return null;
+  if(ex.scale.type==="benchBase") return b1*0.60;
+  if(ex.scale.type==="benchMult"){
+    const m = st.settings.mult[ex.scale.mult] ?? 1;
+    return b1*0.60*m;
+  }
+  return null;
+}
+
+function fmtKg(x){ return (x==null || !isFinite(x)) ? "—" : Number(x).toFixed(1); }
+function fmtMin(sec){ return `${Math.round(sec/60)}m`; }
+function fmtDate(ts){
+  const d = new Date(ts);
+  const day = d.toLocaleDateString(undefined, { weekday:"short", month:"short", day:"numeric" });
+  const time = d.toLocaleTimeString(undefined, { hour:"numeric", minute:"2-digit" });
+  return `${day} • ${time}`;
+}
+
+function ensureActive(){
+  if(st.active) return;
+  const next = Program.cycle[st.progression.nextIndex % Program.cycle.length];
+  st.active = {
+    id: crypto.randomUUID(),
+    key: next.key,
+    name: next.name,
+    suggested: next.suggested,
+    startedAt: Date.now(),
+    sets: {}
+  };
+  save(st);
+}
+
+startBtn.onclick = () => {
+  ensureActive();
+  renderWorkout();
+  setActiveTab("workout");
+};
+
+function render(){
+  const next = Program.cycle[st.progression.nextIndex % Program.cycle.length];
+  const b1 = bench1rm(st.settings.benchW, st.settings.benchR);
+
+  subhead.textContent = `Next: ${next.name} (Suggested ${next.suggested})`;
+  sessionNameEl.textContent = next.name;
+  sessionMetaEl.textContent = `Bench 1RM est ${b1.toFixed(1)} kg`;
+
+  exercisePreview.innerHTML = "";
+  Program.template[next.key].forEach(ex => {
+    const w = plannedWeight(ex);
+    const div = document.createElement("div");
+    div.className = "item";
+    div.innerHTML = `
+      <div class="topline">
+        <div class="name">${ex.name}</div>
+        <div class="pill">${w==null ? "RPE-based" : `Plan ${fmtKg(w)} ${ex.unit}`}</div>
+      </div>
+      <div class="meta">${ex.sets} sets • ${ex.reps} • Rest ${fmtMin(ex.rest)}</div>
+    `;
+    exercisePreview.appendChild(div);
+  });
+
+  tabWorkout.style.opacity = st.active ? "1" : "0.5";
+}
+
+function renderWorkout(){
+  workoutList.innerHTML = "";
+  workoutTitle.textContent = st.active ? st.active.name : "Workout";
+  workoutSubtitle.textContent = st.active ? `Suggested ${st.active.suggested}` : "—";
+  if(!st.active) return;
+
+  const exs = Program.template[st.active.key];
+  exs.forEach(ex => {
+    const div = document.createElement("div");
+    div.className = "item";
+    const w = plannedWeight(ex);
+    const done = (st.active.sets[ex.id] || []).filter(s=>s.completed).length;
+    div.innerHTML = `
+      <div class="topline">
+        <div class="name">${ex.name}</div>
+        <div class="pill">${w==null ? "RPE" : `${fmtKg(w)} ${ex.unit}`}</div>
+      </div>
+      <div class="meta">${done}/${ex.sets} sets • ${ex.reps} • Rest ${fmtMin(ex.rest)}</div>
+    `;
+    div.onclick = () => openDetail(ex);
+    workoutList.appendChild(div);
+  });
+}
+
+function openDetail(ex){
+  currentExercise = ex;
+
+  const wPlan = plannedWeight(ex);
+
+  if(!st.active.sets[ex.id]){
+    st.active.sets[ex.id] = Array.from({length: ex.sets}, (_,i)=>({
+      setIndex: i+1,
+      weight: wPlan != null ? fmtKg(wPlan) : "",
+      reps: "",
+      rpe: "8.0",
+      completed: false
+    }));
+    save(st);
+  }
+
+  detailTitle.textContent = ex.name;
+  detailMeta.textContent = `${ex.sets} sets • ${ex.reps}`;
+  planPill.textContent = wPlan==null ? "RPE-based" : `Plan ${fmtKg(wPlan)} ${ex.unit}`;
+  restPill.textContent = `Rest ${fmtMin(ex.rest)}`;
+
+  renderSets(ex);
+  setActiveTab("detail");
+}
+
+function renderSets(ex){
+  setsEl.innerHTML = "";
+  const arr = st.active.sets[ex.id];
+
+  arr.forEach((s, idx) => {
+    const row = document.createElement("div");
+    row.className = "setrow";
+    row.innerHTML = `
+      <div class="label">Set ${s.setIndex}</div>
+      <input inputmode="decimal" placeholder="Weight" value="${s.weight || ""}" data-i="${idx}" data-k="weight" />
+      <input inputmode="numeric" placeholder="Reps" value="${s.reps || ""}" data-i="${idx}" data-k="reps" />
+      <input inputmode="decimal" placeholder="RPE" value="${s.rpe || "8.0"}" data-i="${idx}" data-k="rpe" />
+    `;
+    setsEl.appendChild(row);
+  });
+
+  setsEl.querySelectorAll("input").forEach(inp => {
+    inp.oninput = () => {
+      const i = Number(inp.dataset.i);
+      const k = inp.dataset.k;
+      st.active.sets[ex.id][i][k] = inp.value;
+      save(st);
+    };
+    inp.onblur = () => {
+      const i = Number(inp.dataset.i);
+      const s = st.active.sets[ex.id][i];
+      const reps = parseInt(s.reps, 10);
+      const weight = parseFloat(String(s.weight).replace(",", "."));
+      if(isFinite(reps) && reps > 0 && (isFinite(weight) || s.weight === "")){
+        s.completed = true;
+      }
+      save(st);
+      renderWorkout();
+    };
+  });
+}
+
+backBtn.onclick = () => { renderWorkout(); setActiveTab("workout"); };
+doneBtn.onclick = () => { renderWorkout(); setActiveTab("workout"); };
+saveAllBtn.onclick = () => { save(st); toast("Saved"); };
+
+finishBtn.onclick = () => {
+  if(!st.active) return;
+  st.history.push({
+    id: st.active.id,
+    name: st.active.name,
+    week: Math.floor(st.progression.completedSessions/5) + 1,
+    startedAt: st.active.startedAt,
+    finishedAt: Date.now(),
+    sets: st.active.sets
+  });
+  st.active = null;
+  st.progression.completedSessions += 1;
+  st.progression.nextIndex = (st.progression.nextIndex + 1) % Program.cycle.length;
+  save(st);
+  render();
+  renderHistory();
+  setActiveTab("today");
+  toast("Workout saved");
+};
+
+function renderHistory(){
+  exportOut.classList.add("hidden");
+  historyList.innerHTML = "";
+  if(!st.history.length){
+    const d = document.createElement("div");
+    d.className = "item";
+    d.innerHTML = `<div class="name">No sessions yet</div><div class="meta">Finish a workout to save it here.</div>`;
+    historyList.appendChild(d);
+    return;
+  }
+  [...st.history].slice().reverse().forEach(sess => {
+    const setsDone = Object.values(sess.sets || {}).reduce((a, arr)=>a+(arr?.filter(x=>x.completed).length||0),0);
+    const div = document.createElement("div");
+    div.className = "item";
+    div.innerHTML = `
+      <div class="topline">
+        <div class="name">${sess.name}</div>
+        <div class="pill">Week ${sess.week}</div>
+      </div>
+      <div class="meta">${fmtDate(sess.finishedAt)} • Completed sets: ${setsDone}</div>
+    `;
+    div.onclick = () => toast(`${sess.name} • Sets: ${setsDone}`);
+    historyList.appendChild(div);
+  });
+}
+
+exportBtn.onclick = () => {
+  exportOut.classList.toggle("hidden");
+  if(!exportOut.classList.contains("hidden")){
+    exportOut.textContent = JSON.stringify(st, null, 2);
+  }
+};
+
+function renderSettings(){
+  benchW.value = st.settings.benchW;
+  benchR.value = st.settings.benchR;
+  bench1rmEl.textContent = `Bench 1RM est: ${bench1rm(st.settings.benchW, st.settings.benchR).toFixed(1)} kg`;
+}
+
+saveSettingsBtn.onclick = () => {
+  const w = parseFloat(String(benchW.value).replace(",", "."));
+  const r = parseInt(benchR.value, 10);
+  if(!isFinite(w) || w<=0 || !isFinite(r) || r<=0){ toast("Enter valid bench"); return; }
+  st.settings.benchW = w;
+  st.settings.benchR = r;
+  save(st);
+  render();
+  renderSettings();
+  toast("Saved");
+};
+
+function load(){
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    if(!raw) return defaultState();
+    const parsed = JSON.parse(raw);
+    if(!parsed.history) parsed.history = [];
+    return parsed;
+  }catch{ return defaultState(); }
+}
+function save(s){ localStorage.setItem(LS_KEY, JSON.stringify(s)); }
+function el(id){ return document.getElementById(id); }
+
+// init
+render();
+renderSettings();
+renderHistory();
+setActiveTab("today");
