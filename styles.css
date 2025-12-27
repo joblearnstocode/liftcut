@@ -149,9 +149,10 @@ body{
   font-size:16px; /* iOS zoom prevention */
 }
 
+/* SET ROW + COMPLETION DOT */
 .setrow{
   display:grid;
-  grid-template-columns: 64px 1.2fr 0.9fr 0.9fr;
+  grid-template-columns: 72px 1.2fr 0.9fr 0.9fr;
   gap:10px;
   align-items:end;
   padding:12px 0;
@@ -184,23 +185,6 @@ body{
   background:#0F1318;
   color:var(--text);
   font-size:16px; /* iOS zoom prevention */
-}
-
-.kbRow{
-  display:flex;
-  gap:8px;
-  flex-wrap:wrap;
-  margin-top:10px;
-}
-
-.quickBtn{
-  padding:8px 10px;
-  border-radius:999px;
-  border:1px solid var(--stroke);
-  background:#0F1318;
-  color:var(--text);
-  font-size:12px;
-  cursor:pointer;
 }
 
 .toast{
