@@ -1,4 +1,4 @@
-const LS_KEY = "liftcut_state_baseline_v2_nextprompt";
+const LS_KEY = "liftcut_state_v3_prompt_timer_dot";
 
 const Program = {
   cycle: [
@@ -60,7 +60,8 @@ function defaultState(){
     },
     progression: { completedSessions: 0, nextIndex: 0 },
     active: null,
-    history: []
+    history: [],
+    timer: { running:false, remaining:0, label:"" }
   };
 }
 
@@ -110,7 +111,8 @@ const saveSettingsBtn = el("saveSettingsBtn");
 const toastEl = el("toast");
 let toastTimer = null;
 
-let currentExercise = null;
+let currentExercise = null; // { ex, index }
+let timerInterval = null;
 
 // ---------- Tabs ----------
 function setActiveTab(which){
@@ -152,11 +154,65 @@ function plannedWeight(ex){
 
 function fmtKg(x){ return (x==null || !isFinite(x)) ? "—" : Number(x).toFixed(1); }
 function fmtMin(sec){ return `${Math.round(sec/60)}m`; }
+function fmtClock(sec){
+  const m = Math.floor(sec/60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2,"0")}`;
+}
 function fmtDate(ts){
   const d = new Date(ts);
   const day = d.toLocaleDateString(undefined, { weekday:"short", month:"short", day:"numeric" });
   const time = d.toLocaleTimeString(undefined, { hour:"numeric", minute:"2-digit" });
   return `${day} • ${time}`;
+}
+function normalizeNum(v){
+  const n = parseFloat(String(v).replace(",", "."));
+  return isFinite(n) ? n : null;
+}
+function normalizeInt(v){
+  const n = parseInt(String(v), 10);
+  return isFinite(n) ? n : null;
+}
+
+// ---------- Timer ----------
+function ensureTimer(){
+  if(timerInterval) return;
+  timerInterval = setInterval(() => {
+    if(!st.timer.running) return;
+    if(st.timer.remaining <= 0){
+      st.timer.running = false;
+      st.timer.remaining = 0;
+      save(st);
+      renderRestPill();
+      toast("Rest complete");
+      return;
+    }
+    st.timer.remaining -= 1;
+    save(st);
+    renderRestPill();
+  }, 1000);
+}
+
+function startRest(seconds, label){
+  ensureTimer();
+  st.timer.running = true;
+  st.timer.remaining = Math.max(0, Math.round(seconds));
+  st.timer.label = label || "";
+  save(st);
+  renderRestPill();
+}
+
+function renderRestPill(){
+  if(!currentExercise){
+    restPill.textContent = "Rest —";
+    return;
+  }
+  const base = `Rest ${fmtMin(currentExercise.ex.rest)}`;
+  if(st.timer.running){
+    restPill.textContent = `${base} • ${fmtClock(st.timer.remaining)}`;
+  } else {
+    restPill.textContent = base;
+  }
 }
 
 // ---------- Session ----------
@@ -273,10 +329,16 @@ function openDetail(ex, index){
   detailTitle.textContent = ex.name;
   detailMeta.textContent = `${ex.sets} sets • ${ex.reps}`;
   planPill.textContent = wPlan==null ? "RPE-based" : `Plan ${fmtKg(wPlan)} ${ex.unit}`;
-  restPill.textContent = `Rest ${fmtMin(ex.rest)}`;
+  renderRestPill();
 
   renderSets(ex);
   setActiveTab("detail");
+}
+
+function computeCompleted(s){
+  const reps = normalizeInt(s.reps);
+  const w = normalizeNum(s.weight);
+  return (reps != null && reps > 0) && (w != null && w > 0);
 }
 
 function renderSets(ex){
@@ -287,7 +349,10 @@ function renderSets(ex){
     const row = document.createElement("div");
     row.className = "setrow";
     row.innerHTML = `
-      <div class="label">Set ${s.setIndex}</div>
+      <div class="label">
+        <div>Set ${s.setIndex}</div>
+        <div class="doneDot ${s.completed ? "on" : ""}"></div>
+      </div>
       <input inputmode="decimal" placeholder="Weight" value="${s.weight || ""}" data-i="${idx}" data-k="weight" />
       <input inputmode="numeric" placeholder="Reps" value="${s.reps || ""}" data-i="${idx}" data-k="reps" />
       <input inputmode="decimal" placeholder="RPE" value="${s.rpe || "8.0"}" data-i="${idx}" data-k="rpe" />
@@ -295,6 +360,7 @@ function renderSets(ex){
     setsEl.appendChild(row);
   });
 
+  // draft-save on input, commit on blur/enter
   setsEl.querySelectorAll("input").forEach(inp => {
     inp.oninput = () => {
       const i = Number(inp.dataset.i);
@@ -303,30 +369,41 @@ function renderSets(ex){
       save(st);
     };
 
-    inp.onblur = () => {
+    const commit = () => {
       const i = Number(inp.dataset.i);
       const s = st.active.sets[ex.id][i];
 
-      // Minimal completion rule (baseline behavior)
-      const reps = parseInt(s.reps, 10);
-      const weight = parseFloat(String(s.weight).replace(",", "."));
-      if(isFinite(reps) && reps > 0 && isFinite(weight) && weight > 0){
-        s.completed = true;
-      }
+      // normalize on commit
+      const repsN = normalizeInt(s.reps);
+      s.reps = repsN == null ? "" : String(repsN);
+
+      const wN = normalizeNum(s.weight);
+      s.weight = wN == null ? "" : fmtKg(wN);
+
+      const rpeN = normalizeNum(s.rpe);
+      s.rpe = rpeN == null ? (s.rpe || "8.0") : (Math.round(rpeN * 10) / 10).toFixed(1);
+
+      const was = s.completed;
+      s.completed = computeCompleted(s);
 
       save(st);
       renderWorkout();
 
-      // If this blur made the whole exercise complete, prompt next action.
-      if(currentExercise){
-        const exs = getExerciseList();
-        const thisEx = exs[currentExercise.index];
-        if(thisEx && thisEx.id === ex.id && isExerciseComplete(ex)){
-          promptAfterExerciseComplete(currentExercise.index);
-        }
+      // on first-time completion: start rest + refresh dots
+      if(!was && s.completed){
+        startRest(ex.rest, ex.name);
+        renderSets(ex); // refresh completion dots
+        toast(`Set ${s.setIndex} complete`);
+      }
+
+      // if whole exercise complete: show prompt
+      if(currentExercise && isExerciseComplete(ex)){
+        promptAfterExerciseComplete(currentExercise.index);
       }
     };
 
+    inp.onblur = commit;
+    inp.onchange = commit;
     inp.onkeydown = (e) => { if(e.key === "Enter"){ inp.blur(); } };
   });
 }
@@ -335,19 +412,15 @@ function promptAfterExerciseComplete(idx){
   const exs = getExerciseList();
   const nextIdx = nextIncompleteIndex(idx);
 
-  // Use native confirm for stability (no CSS overlays).
-  // OK = Next, Cancel = Back to workout list
   if(nextIdx === -1){
-    // All exercises complete
     toast("All exercises complete");
-    // Keep user choice: go back to workout list
     renderWorkout();
     setActiveTab("workout");
     return;
   }
 
   const nextName = exs[nextIdx].name;
-  const ok = confirm(`Exercise complete.\n\nNext: ${nextName}\n\nPress OK for Next, or Cancel for Workout list.`);
+  const ok = confirm(`Exercise complete.\n\nNext: ${nextName}\n\nOK = Next, Cancel = Workout list.`);
   if(ok){
     openDetail(exs[nextIdx], nextIdx);
   } else {
@@ -374,7 +447,10 @@ finishBtn.onclick = () => {
   st.active = null;
   st.progression.completedSessions += 1;
   st.progression.nextIndex = (st.progression.nextIndex + 1) % Program.cycle.length;
+
+  st.timer = { running:false, remaining:0, label:"" };
   save(st);
+
   render();
   renderHistory();
   setActiveTab("today");
@@ -423,9 +499,9 @@ function renderSettings(){
 }
 
 saveSettingsBtn.onclick = () => {
-  const w = parseFloat(String(benchW.value).replace(",", "."));
-  const r = parseInt(benchR.value, 10);
-  if(!isFinite(w) || w<=0 || !isFinite(r) || r<=0){ toast("Enter valid bench"); return; }
+  const w = normalizeNum(benchW.value);
+  const r = normalizeInt(benchR.value);
+  if(w==null || w<=0 || r==null || r<=0){ toast("Enter valid bench"); return; }
   st.settings.benchW = w;
   st.settings.benchR = r;
   save(st);
@@ -441,6 +517,7 @@ function load(){
     if(!raw) return defaultState();
     const parsed = JSON.parse(raw);
     if(!parsed.history) parsed.history = [];
+    if(!parsed.timer) parsed.timer = { running:false, remaining:0, label:"" };
     return parsed;
   }catch{ return defaultState(); }
 }
@@ -448,6 +525,7 @@ function save(s){ localStorage.setItem(LS_KEY, JSON.stringify(s)); }
 function el(id){ return document.getElementById(id); }
 
 // init
+ensureTimer();
 render();
 renderSettings();
 renderHistory();
