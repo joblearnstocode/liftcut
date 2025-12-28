@@ -1,3 +1,6 @@
+/* BUILD: liftcut-stable-history */
+
+/* ---------- Root + Reset ---------- */
 :root{
   --bg:#0B0D10;
   --card:#12161C;
@@ -5,26 +8,38 @@
   --text:#E8EEF8;
   --muted:#A7B2C3;
   --accent:#6EE7B7;
+  --shadow: 0 0 0 1px var(--stroke);
   --r:18px;
   --pad:16px;
   --safe-top: env(safe-area-inset-top);
   --safe-bottom: env(safe-area-inset-bottom);
 }
 
-*{box-sizing:border-box}
+*{ box-sizing:border-box }
+html, body{ height:100% }
+
 body{
   margin:0;
   background:var(--bg);
   color:var(--text);
-  font-family:-apple-system,system-ui,Segoe UI,Roboto;
+  font-family:-apple-system, system-ui, Segoe UI, Roboto, Arial, sans-serif;
 }
 
+/* ---------- Top / Header ---------- */
 .top{
   padding:calc(var(--pad) + var(--safe-top)) var(--pad) 10px;
 }
-.title{font-size:22px;font-weight:650}
-.sub{font-size:13px;color:var(--muted);margin-top:4px}
+.title{
+  font-size:22px;
+  font-weight:650;
+}
+.sub{
+  font-size:13px;
+  color:var(--muted);
+  margin-top:4px;
+}
 
+/* ---------- Tabs ---------- */
 .tabs{
   display:flex;
   gap:8px;
@@ -37,12 +52,14 @@ body{
   border:0;
   background:#0F1318;
   color:var(--muted);
+  font-weight:600;
 }
 .tab.active{
   background:#18202B;
   color:var(--text);
 }
 
+/* ---------- Layout ---------- */
 .wrap{
   padding:0 var(--pad) calc(24px + var(--safe-bottom));
   display:flex;
@@ -50,21 +67,50 @@ body{
   gap:12px;
 }
 
+.hidden{ display:none }
+
+/* ---------- Cards & Lists ---------- */
 .card{
   background:var(--card);
   border-radius:var(--r);
   padding:14px;
   border:1px solid var(--stroke);
+  box-shadow: var(--shadow);
 }
 
-.h{font-weight:650}
-.s{font-size:13px;color:var(--muted)}
+.list{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
 
-.row{display:flex;justify-content:space-between;align-items:center;gap:12px}
-.row.tight{gap:8px}
+.item{
+  padding:12px;
+  border-radius:14px;
+  border:1px solid var(--stroke);
+  background:rgba(255,255,255,0.02);
+}
 
-.divider{height:1px;background:var(--stroke);margin:12px 0}
+/* ---------- Typography ---------- */
+.h{ font-weight:650 }
+.s{ font-size:13px; color:var(--muted) }
 
+/* ---------- Rows ---------- */
+.row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+}
+.row.tight{ gap:8px }
+
+.divider{
+  height:1px;
+  background:var(--stroke);
+  margin:12px 0;
+}
+
+/* ---------- Buttons ---------- */
 .btn{
   background:var(--accent);
   border:0;
@@ -78,14 +124,16 @@ body{
   border:1px solid var(--stroke);
 }
 
-.list{display:flex;flex-direction:column;gap:10px}
-
-.item{
-  padding:12px;
-  border-radius:14px;
+/* ---------- Pills ---------- */
+.pill{
+  padding:6px 10px;
+  border-radius:999px;
   border:1px solid var(--stroke);
+  font-size:12px;
 }
+.pill.subtle{ color:var(--muted) }
 
+/* ---------- Inputs ---------- */
 .field span{
   display:block;
   font-size:12px;
@@ -99,19 +147,10 @@ body{
   border:1px solid var(--stroke);
   background:#0F1318;
   color:var(--text);
-  font-size:16px;
+  font-size:16px; /* prevents iOS zoom */
 }
 
-.pill{
-  padding:6px 10px;
-  border-radius:999px;
-  border:1px solid var(--stroke);
-  font-size:12px;
-}
-.pill.subtle{color:var(--muted)}
-
-.hidden{display:none}
-
+/* ---------- Toast ---------- */
 .toast{
   position:fixed;
   left:16px;
@@ -122,12 +161,18 @@ body{
   padding:12px;
   border-radius:14px;
   font-size:13px;
+  z-index:10;
 }
-/* --- History accordion --- */
+
+/* ========================================================= */
+/* ================= History Accordion ===================== */
+/* ========================================================= */
+
 .histDetails{
   border-radius:14px;
+  background:rgba(255,255,255,0.02);
+  border:1px solid var(--stroke);
   box-shadow: var(--shadow);
-  background: rgba(255,255,255,0.02);
   overflow:hidden;
 }
 
@@ -137,7 +182,7 @@ body{
   padding:12px;
   user-select:none;
 }
-.histSummary::-webkit-details-marker{ display:none; }
+.histSummary::-webkit-details-marker{ display:none }
 
 .histHead{
   display:flex;
@@ -145,24 +190,36 @@ body{
   align-items:flex-start;
   gap:12px;
 }
-.histTitle{ font-weight:650; }
-.histMeta{ color:var(--muted); font-size:12px; margin-top:6px; line-height:1.35; }
+.histTitle{
+  font-weight:650;
+}
+.histMeta{
+  color:var(--muted);
+  font-size:12px;
+  margin-top:6px;
+  line-height:1.35;
+}
 
 .histBody{
-  padding: 0 12px 12px 12px;
+  padding:0 12px 12px 12px;
 }
 
 .histExercise{
   margin-top:10px;
   padding-top:10px;
-  border-top: 1px solid rgba(32,39,52,0.55);
+  border-top:1px solid rgba(32,39,52,0.55);
 }
 .histExercise:first-child{
   border-top:0;
   padding-top:0;
 }
-.histExName{ font-weight:650; }
-.histExSub{ color:var(--muted); font-size:12px; margin-top:4px; }
+
+.histExName{ font-weight:650 }
+.histExSub{
+  color:var(--muted);
+  font-size:12px;
+  margin-top:4px;
+}
 
 .histSets{
   margin-top:8px;
@@ -176,9 +233,9 @@ body{
   gap:12px;
   padding:8px 10px;
   border-radius:12px;
-  border: 1px solid rgba(32,39,52,0.65);
+  border:1px solid rgba(32,39,52,0.65);
   background:#0F1318;
   font-size:12px;
 }
-.histSetRow .l{ color:var(--muted); }
-.histSetRow .r{ color:var(--text); font-weight:650; }
+.histSetRow .l{ color:var(--muted) }
+.histSetRow .r{ color:var(--text); font-weight:650 }
