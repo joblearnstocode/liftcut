@@ -300,5 +300,26 @@ body{
   padding:0;
   border-radius:6px;
 }
+/* --- History delete controls --- */
+.histActions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-top:10px;
+}
+
+.histBtn.warn{
+  background:transparent;
+  border:1px solid rgba(255,255,255,0.18);
+  color:var(--text);
+}
+
+.histBtn.danger{
+  background:transparent;
+  border:1px solid rgba(255,255,255,0.22);
+  color:var(--text);
+}
+
+
 
 
