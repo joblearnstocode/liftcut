@@ -1,75 +1,87 @@
-const LS_KEY = "liftcut_state_v5_history_accordion"; // keep same key to preserve your data
+// LiftCut — app.js (Full)
+// Includes: workout logging, rest timer (foreground), History accordion, History edit mode, safe deletion
+// Storage key preserved to keep your existing history.
+const LS_KEY = "liftcut_state_v5_history_accordion";
 
 const Program = {
   cycle: [
-    { name:"Upper A", suggested:"Mon", key:"UA" },
-    { name:"Lower A", suggested:"Tue", key:"LA" },
-    { name:"Upper B (Push)", suggested:"Thu", key:"UB" },
-    { name:"Upper C (Pull)", suggested:"Fri" , key:"UC" },
-    { name:"Lower B", suggested:"Sat", key:"LB" }
+    { name: "Upper A", suggested: "Mon", key: "UA" },
+    { name: "Lower A", suggested: "Tue", key: "LA" },
+    { name: "Upper B (Push)", suggested: "Thu", key: "UB" },
+    { name: "Upper C (Pull)", suggested: "Fri", key: "UC" },
+    { name: "Lower B", suggested: "Sat", key: "LB" },
   ],
   template: {
     UA: [
-      ex("bench","Barbell Bench Press",3,"8–10",180,"kg",{type:"benchBase"}),
-      ex("row","Bent-Over Barbell Row",3,"8–10",180,"kg",{type:"benchMult", mult:"rowMult"}),
-      ex("ohp","Overhead Press (Barbell)",3,"8–10",180,"kg",{type:"benchMult", mult:"ohpMult"}),
-      ex("latpd","Lat Pulldown / Assist",3,"8–10",150,"stack",{type:"rpe"}),
-      ex("hc","Hammer Curl (DB)",2,"10–12",90,"kg/hand",{type:"rpe"}),
-      ex("tpd","Triceps Pushdown (Cable)",2,"10–12",90,"stack",{type:"rpe"})
+      ex("bench", "Barbell Bench Press", 3, "8–10", 180, "kg", { type: "benchBase" }),
+      ex("row", "Bent-Over Barbell Row", 3, "8–10", 180, "kg", { type: "benchMult", mult: "rowMult" }),
+      ex("ohp", "Overhead Press (Barbell)", 3, "8–10", 180, "kg", { type: "benchMult", mult: "ohpMult" }),
+      ex("latpd", "Lat Pulldown / Assist", 3, "8–10", 150, "stack", { type: "rpe" }),
+      ex("hc", "Hammer Curl (DB)", 2, "10–12", 90, "kg/hand", { type: "rpe" }),
+      ex("tpd", "Triceps Pushdown (Cable)", 2, "10–12", 90, "stack", { type: "rpe" }),
     ],
     LA: [
-      ex("squat","Back Squat",3,"8–10",210,"kg",{type:"benchMult", mult:"squatMult"}),
-      ex("rdl","Romanian Deadlift",3,"8–12",180,"kg",{type:"benchMult", mult:"rdlMult"}),
-      ex("lp","Leg Press",3,"10–12",150,"machine",{type:"rpe"}),
-      ex("lunge","Walking Lunge (DB)",2,"12 steps/leg",120,"kg/hand",{type:"rpe"}),
-      ex("calf","Standing Calf Raise",3,"12–15",90,"machine",{type:"rpe"})
+      ex("squat", "Back Squat", 3, "8–10", 210, "kg", { type: "benchMult", mult: "squatMult" }),
+      ex("rdl", "Romanian Deadlift", 3, "8–12", 180, "kg", { type: "benchMult", mult: "rdlMult" }),
+      ex("lp", "Leg Press", 3, "10–12", 150, "machine", { type: "rpe" }),
+      ex("lunge", "Walking Lunge (DB)", 2, "12 steps/leg", 120, "kg/hand", { type: "rpe" }),
+      ex("calf", "Standing Calf Raise", 3, "12–15", 90, "machine", { type: "rpe" }),
     ],
     UB: [
-      ex("incdb","Incline DB Press",3,"8–12",150,"kg/hand",{type:"rpe"}),
-      ex("fly","Seated Cable Fly (High-to-Low)",3,"10–15",120,"stack",{type:"rpe"}),
-      ex("latraise","Lateral Raise (DB)",3,"12–15",90,"kg/hand",{type:"rpe"}),
-      ex("toh","Overhead Triceps Extension (Cable)",3,"10–12",120,"stack",{type:"rpe"}),
-      ex("facepull","Face Pull (optional)",2,"12–15",90,"stack",{type:"rpe"})
+      ex("incdb", "Incline DB Press", 3, "8–12", 150, "kg/hand", { type: "rpe" }),
+      ex("fly", "Seated Cable Fly (High-to-Low)", 3, "10–15", 120, "stack", { type: "rpe" }),
+      ex("latraise", "Lateral Raise (DB)", 3, "12–15", 90, "kg/hand", { type: "rpe" }),
+      ex("toh", "Overhead Triceps Extension (Cable)", 3, "10–12", 120, "stack", { type: "rpe" }),
+      ex("facepull", "Face Pull (optional)", 2, "12–15", 90, "stack", { type: "rpe" }),
     ],
     UC: [
-      ex("deadlift","Deadlift (Conventional/Trap)",3,"6–8",240,"kg",{type:"benchMult", mult:"deadliftMult"}),
-      ex("pull","Pull-ups / Lat Pulldown",3,"6–10",150,"stack/added",{type:"rpe"}),
-      ex("csrow","Chest-Supported Row",3,"10",150,"kg",{type:"rpe"}),
-      ex("latrow","45° Cable Lat Row",2,"12",120,"stack",{type:"rpe"}),
-      ex("reardelt","Rear Delt Cable Fly (45°)",2,"12–15",90,"stack",{type:"rpe"}),
-      ex("curl","Incline DB Curl",3,"8–12",90,"kg/hand",{type:"rpe"})
+      ex("deadlift", "Deadlift (Conventional/Trap)", 3, "6–8", 240, "kg", { type: "benchMult", mult: "deadliftMult" }),
+      ex("pull", "Pull-ups / Lat Pulldown", 3, "6–10", 150, "stack/added", { type: "rpe" }),
+      ex("csrow", "Chest-Supported Row", 3, "10", 150, "kg", { type: "rpe" }),
+      ex("latrow", "45° Cable Lat Row", 2, "12", 120, "stack", { type: "rpe" }),
+      ex("reardelt", "Rear Delt Cable Fly (45°)", 2, "12–15", 90, "stack", { type: "rpe" }),
+      ex("curl", "Incline DB Curl", 3, "8–12", 90, "kg/hand", { type: "rpe" }),
     ],
     LB: [
-      ex("hipthrust","Hip Thrust",3,"8–12",180,"kg",{type:"benchMult", mult:"hipThrustMult"}),
-      ex("bulg","Bulgarian Split Squat (DB)",2,"10/leg",120,"kg/hand",{type:"rpe"}),
-      ex("legcurl","Seated Leg Curl",3,"10–15",120,"stack",{type:"rpe"}),
-      ex("legext","Leg Extension",3,"12–15",90,"stack",{type:"rpe"}),
-      ex("calf2","Seated Calf Raise",3,"12–15",90,"machine",{type:"rpe"})
-    ]
-  }
+      ex("hipthrust", "Hip Thrust", 3, "8–12", 180, "kg", { type: "benchMult", mult: "hipThrustMult" }),
+      ex("bulg", "Bulgarian Split Squat (DB)", 2, "10/leg", 120, "kg/hand", { type: "rpe" }),
+      ex("legcurl", "Seated Leg Curl", 3, "10–15", 120, "stack", { type: "rpe" }),
+      ex("legext", "Leg Extension", 3, "12–15", 90, "stack", { type: "rpe" }),
+      ex("calf2", "Seated Calf Raise", 3, "12–15", 90, "machine", { type: "rpe" }),
+    ],
+  },
 };
 
-function ex(id,name,sets,reps,rest,unit,scale){ return {id,name,sets,reps,rest,unit,scale}; }
+function ex(id, name, sets, reps, rest, unit, scale) {
+  return { id, name, sets, reps, rest, unit, scale };
+}
 
-function defaultState(){
+function defaultState() {
   return {
     settings: {
       benchW: 50,
       benchR: 12,
-      mult: { squatMult:0.85, deadliftMult:0.95, rdlMult:0.75, hipThrustMult:0.90, ohpMult:0.45, rowMult:0.70 }
+      mult: {
+        squatMult: 0.85,
+        deadliftMult: 0.95,
+        rdlMult: 0.75,
+        hipThrustMult: 0.9,
+        ohpMult: 0.45,
+        rowMult: 0.7,
+      },
     },
     progression: { completedSessions: 0, nextIndex: 0 },
     active: null,
     history: [],
-    timer: { running:false, endAt:0, lastShownDone:false, label:"" }
+    timer: { running: false, endAt: 0, lastShownDone: false, label: "" },
   };
 }
 
 let st = load();
 
-// Edit buffers (in-memory only)
+// History editing state
 let editingSessionId = null;
-const editSnapshot = new Map(); // sessionId -> deep copy snapshot
+const editSnapshot = new Map(); // sessionId -> deep copy
 
 // UI refs
 const subhead = el("subhead");
@@ -115,91 +127,142 @@ const saveSettingsBtn = el("saveSettingsBtn");
 const toastEl = el("toast");
 let toastTimer = null;
 
-let currentExercise = null;
+let currentExercise = null; // { ex, index }
 let timerInterval = null;
 
-// ---------- Tabs ----------
-function setActiveTab(which){
-  [tabToday, tabWorkout, tabHistory, tabSettings].forEach(t => t.classList.remove("active"));
-  [paneToday, paneWorkout, paneDetail, paneHistory, paneSettings].forEach(p => p.classList.add("hidden"));
+// ---------------- Tabs ----------------
+function setActiveTab(which) {
+  [tabToday, tabWorkout, tabHistory, tabSettings].forEach((t) => t.classList.remove("active"));
+  [paneToday, paneWorkout, paneDetail, paneHistory, paneSettings].forEach((p) => p.classList.add("hidden"));
 
-  if(which==="today"){ tabToday.classList.add("active"); paneToday.classList.remove("hidden"); }
-  if(which==="workout"){ tabWorkout.classList.add("active"); paneWorkout.classList.remove("hidden"); }
-  if(which==="detail"){ tabWorkout.classList.add("active"); paneDetail.classList.remove("hidden"); }
-  if(which==="history"){ tabHistory.classList.add("active"); paneHistory.classList.remove("hidden"); }
-  if(which==="settings"){ tabSettings.classList.add("active"); paneSettings.classList.remove("hidden"); }
+  if (which === "today") {
+    tabToday.classList.add("active");
+    paneToday.classList.remove("hidden");
+  }
+  if (which === "workout") {
+    tabWorkout.classList.add("active");
+    paneWorkout.classList.remove("hidden");
+  }
+  if (which === "detail") {
+    tabWorkout.classList.add("active");
+    paneDetail.classList.remove("hidden");
+  }
+  if (which === "history") {
+    tabHistory.classList.add("active");
+    paneHistory.classList.remove("hidden");
+  }
+  if (which === "settings") {
+    tabSettings.classList.add("active");
+    paneSettings.classList.remove("hidden");
+  }
 }
 
-tabToday.onclick = () => { render(); setActiveTab("today"); };
-tabWorkout.onclick = () => { if(st.active){ renderWorkout(); setActiveTab("workout"); } else { setActiveTab("today"); } };
-tabHistory.onclick = () => { renderHistory(); setActiveTab("history"); };
-tabSettings.onclick = () => { renderSettings(); setActiveTab("settings"); };
+tabToday.onclick = () => {
+  render();
+  setActiveTab("today");
+};
+tabWorkout.onclick = () => {
+  if (st.active) {
+    renderWorkout();
+    setActiveTab("workout");
+  } else {
+    setActiveTab("today");
+  }
+};
+tabHistory.onclick = () => {
+  renderHistory();
+  setActiveTab("history");
+};
+tabSettings.onclick = () => {
+  renderSettings();
+  setActiveTab("settings");
+};
 
-function toast(msg){
-  if(toastTimer) clearTimeout(toastTimer);
+function toast(msg) {
+  if (toastTimer) clearTimeout(toastTimer);
   toastEl.textContent = msg;
   toastEl.classList.remove("hidden");
   toastTimer = setTimeout(() => toastEl.classList.add("hidden"), 1500);
 }
 
-// ---------- Helpers ----------
-function bench1rm(w,r){ return w*(1 + (r/30)); }
-function plannedWeight(ex){
+// --------------- Helpers ---------------
+function bench1rm(w, r) {
+  return w * (1 + r / 30);
+}
+
+function plannedWeight(exercise) {
   const b1 = bench1rm(st.settings.benchW, st.settings.benchR);
-  if(ex.scale.type==="rpe") return null;
-  if(ex.scale.type==="benchBase") return b1*0.60;
-  if(ex.scale.type==="benchMult"){
-    const m = st.settings.mult[ex.scale.mult] ?? 1;
-    return b1*0.60*m;
+  if (exercise.scale.type === "rpe") return null;
+  if (exercise.scale.type === "benchBase") return b1 * 0.6;
+  if (exercise.scale.type === "benchMult") {
+    const m = st.settings.mult[exercise.scale.mult] ?? 1;
+    return b1 * 0.6 * m;
   }
   return null;
 }
-function fmtKg(x){ return (x==null || !isFinite(x)) ? "—" : Number(x).toFixed(1); }
-function fmtMin(sec){ return `${Math.round(sec/60)}m`; }
-function fmtDate(ts){
+
+function fmtKg(x) {
+  return x == null || !isFinite(x) ? "—" : Number(x).toFixed(1);
+}
+
+function fmtMin(sec) {
+  return `${Math.round(sec / 60)}m`;
+}
+
+function fmtDate(ts) {
   const d = new Date(ts);
-  const day = d.toLocaleDateString(undefined, { weekday:"short", month:"short", day:"numeric" });
-  const time = d.toLocaleTimeString(undefined, { hour:"numeric", minute:"2-digit" });
+  const day = d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
   return `${day} • ${time}`;
 }
-function esc(s){
-  return String(s ?? "").replace(/[&<>"']/g, ch => (
-    ch === "&" ? "&amp;" :
-    ch === "<" ? "&lt;" :
-    ch === ">" ? "&gt;" :
-    ch === `"` ? "&quot;" : "&#39;"
-  ));
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (ch) =>
+    ch === "&" ? "&amp;" : ch === "<" ? "&lt;" : ch === ">" ? "&gt;" : ch === `"` ? "&quot;" : "&#39;"
+  );
 }
-function deepCopy(obj){ return JSON.parse(JSON.stringify(obj)); }
-function normalizeNum(v){
+
+function deepCopy(obj) {
+  return JSON.parse(JSON.stringify(obj));
+}
+
+function normalizeNum(v) {
   const n = parseFloat(String(v).replace(",", "."));
   return isFinite(n) ? n : null;
 }
-function normalizeInt(v){
+
+function normalizeInt(v) {
   const n = parseInt(String(v), 10);
   return isFinite(n) ? n : null;
 }
 
-// ---------- Timer (kept; not focus) ----------
-function remainingSeconds(){
-  if(!st.timer?.running) return 0;
+function msDays(days) {
+  return days * 24 * 60 * 60 * 1000;
+}
+
+// --------------- Timer (foreground) ---------------
+function remainingSeconds() {
+  if (!st.timer?.running) return 0;
   const diff = st.timer.endAt - Date.now();
   return Math.max(0, Math.ceil(diff / 1000));
 }
-function ensureTimer(){
-  if(timerInterval) return;
+
+function ensureTimer() {
+  if (timerInterval) return;
   timerInterval = setInterval(() => {
-    if(!st.timer?.running) return;
+    if (!st.timer?.running) return;
     const rem = remainingSeconds();
     renderRestPill();
-    if(rem <= 0){
+    if (rem <= 0) {
       st.timer.running = false;
       st.timer.endAt = 0;
-      if(!st.timer.lastShownDone){
+      if (!st.timer.lastShownDone) {
         st.timer.lastShownDone = true;
         save(st);
         toast("Rest complete");
-      } else save(st);
+      } else {
+        save(st);
+      }
       renderRestPill();
     } else {
       st.timer.lastShownDone = false;
@@ -207,7 +270,8 @@ function ensureTimer(){
     }
   }, 500);
 }
-function startRest(seconds, label){
+
+function startRest(seconds, label) {
   ensureTimer();
   const secs = Math.max(0, Math.round(seconds));
   st.timer.running = true;
@@ -217,28 +281,46 @@ function startRest(seconds, label){
   save(st);
   renderRestPill();
 }
-function renderRestPill(){
-  if(!currentExercise){ restPill.textContent = "Rest —"; return; }
+
+function renderRestPill() {
+  if (!currentExercise) {
+    restPill.textContent = "Rest —";
+    return;
+  }
   const base = `Rest ${fmtMin(currentExercise.ex.rest)}`;
-  if(st.timer?.running){
+  if (st.timer?.running) {
     const rem = remainingSeconds();
-    const m = Math.floor(rem/60);
+    const m = Math.floor(rem / 60);
     const s = rem % 60;
-    restPill.textContent = `${base} • ${m}:${String(s).padStart(2,"0")}`;
-  } else restPill.textContent = base;
+    restPill.textContent = `${base} • ${m}:${String(s).padStart(2, "0")}`;
+  } else {
+    restPill.textContent = base;
+  }
 }
 
-// ---------- Session ----------
-function ensureActive(){
-  if(st.active) return;
+// --------------- Session ---------------
+function ensureActive() {
+  if (st.active) return;
   const next = Program.cycle[st.progression.nextIndex % Program.cycle.length];
-  st.active = { id: crypto.randomUUID(), key: next.key, name: next.name, suggested: next.suggested, startedAt: Date.now(), sets: {} };
+  st.active = {
+    id: crypto.randomUUID(),
+    key: next.key,
+    name: next.name,
+    suggested: next.suggested,
+    startedAt: Date.now(),
+    sets: {},
+  };
   save(st);
 }
-startBtn.onclick = () => { ensureActive(); renderWorkout(); setActiveTab("workout"); };
 
-// ---------- Today render ----------
-function render(){
+startBtn.onclick = () => {
+  ensureActive();
+  renderWorkout();
+  setActiveTab("workout");
+};
+
+// --------------- Today render ---------------
+function render() {
   const next = Program.cycle[st.progression.nextIndex % Program.cycle.length];
   const b1 = bench1rm(st.settings.benchW, st.settings.benchR);
 
@@ -247,16 +329,16 @@ function render(){
   sessionMetaEl.textContent = `Bench 1RM est ${b1.toFixed(1)} kg`;
 
   exercisePreview.innerHTML = "";
-  Program.template[next.key].forEach(ex => {
-    const w = plannedWeight(ex);
+  Program.template[next.key].forEach((exercise) => {
+    const w = plannedWeight(exercise);
     const div = document.createElement("div");
     div.className = "item";
     div.innerHTML = `
       <div class="topline">
-        <div class="name">${esc(ex.name)}</div>
-        <div class="pill">${w==null ? "RPE-based" : `Plan ${fmtKg(w)} ${esc(ex.unit)}`}</div>
+        <div class="name">${esc(exercise.name)}</div>
+        <div class="pill">${w == null ? "RPE-based" : `Plan ${fmtKg(w)} ${esc(exercise.unit)}`}</div>
       </div>
-      <div class="meta">${ex.sets} sets • ${esc(ex.reps)} • Rest ${fmtMin(ex.rest)}</div>
+      <div class="meta">${exercise.sets} sets • ${esc(exercise.reps)} • Rest ${fmtMin(exercise.rest)}</div>
     `;
     exercisePreview.appendChild(div);
   });
@@ -264,83 +346,101 @@ function render(){
   tabWorkout.style.opacity = st.active ? "1" : "0.5";
 }
 
-// ---------- Workout ----------
-function renderWorkout(){
+// --------------- Workout ---------------
+function renderWorkout() {
   workoutList.innerHTML = "";
   workoutTitle.textContent = st.active ? st.active.name : "Workout";
   workoutSubtitle.textContent = st.active ? `Suggested ${st.active.suggested}` : "—";
-  if(!st.active) return;
+  if (!st.active) return;
 
-  const exs = Program.template[st.active.key];
-  exs.forEach((ex, i) => {
+  const exs = Program.template[st.active.key] || [];
+  exs.forEach((exercise, i) => {
     const div = document.createElement("div");
     div.className = "item";
-    const w = plannedWeight(ex);
-    const done = (st.active.sets[ex.id] || []).filter(s=>s.completed).length;
+    const w = plannedWeight(exercise);
+    const done = (st.active.sets[exercise.id] || []).filter((s) => s.completed).length;
+
     div.innerHTML = `
       <div class="topline">
-        <div class="name">${esc(ex.name)}</div>
-        <div class="pill">${w==null ? "RPE" : `${fmtKg(w)} ${esc(ex.unit)}`}</div>
+        <div class="name">${esc(exercise.name)}</div>
+        <div class="pill">${w == null ? "RPE" : `${fmtKg(w)} ${esc(exercise.unit)}`}</div>
       </div>
-      <div class="meta">${done}/${ex.sets} sets • ${esc(ex.reps)} • Rest ${fmtMin(ex.rest)}</div>
+      <div class="meta">${done}/${exercise.sets} sets • ${esc(exercise.reps)} • Rest ${fmtMin(exercise.rest)}</div>
     `;
-    div.onclick = () => openDetail(ex, i);
+    div.onclick = () => openDetail(exercise, i);
     workoutList.appendChild(div);
   });
 }
 
-// ---------- Detail ----------
-function openDetail(ex, index){
-  currentExercise = { ex, index };
-  const wPlan = plannedWeight(ex);
+// --------------- Detail ---------------
+function openDetail(exercise, index) {
+  currentExercise = { ex: exercise, index };
+  const wPlan = plannedWeight(exercise);
 
-  if(!st.active.sets[ex.id]){
-    st.active.sets[ex.id] = Array.from({length: ex.sets}, (_,i)=>({
-      setIndex: i+1, weight: wPlan != null ? fmtKg(wPlan) : "", reps: "", rpe: "8.0", completed: false
+  if (!st.active.sets[exercise.id]) {
+    st.active.sets[exercise.id] = Array.from({ length: exercise.sets }, (_, i) => ({
+      setIndex: i + 1,
+      weight: wPlan != null ? fmtKg(wPlan) : "",
+      reps: "",
+      rpe: "8.0",
+      completed: false,
     }));
     save(st);
   }
 
-  detailTitle.textContent = ex.name;
-  detailMeta.textContent = `${ex.sets} sets • ${ex.reps}`;
-  planPill.textContent = wPlan==null ? "RPE-based" : `Plan ${fmtKg(wPlan)} ${ex.unit}`;
+  detailTitle.textContent = exercise.name;
+  detailMeta.textContent = `${exercise.sets} sets • ${exercise.reps}`;
+  planPill.textContent = wPlan == null ? "RPE-based" : `Plan ${fmtKg(wPlan)} ${exercise.unit}`;
   renderRestPill();
-  renderSets(ex);
+  renderSets(exercise);
   setActiveTab("detail");
 }
 
-function computeCompleted(s){
-  const reps = normalizeInt(s.reps);
-  const w = normalizeNum(s.weight);
-  return (reps != null && reps > 0) && (w != null && w > 0);
+function computeCompleted(set) {
+  const reps = normalizeInt(set.reps);
+  const w = normalizeNum(set.weight);
+  return reps != null && reps > 0 && w != null && w > 0;
 }
 
-function isExerciseComplete(ex){
-  const arr = st.active?.sets?.[ex.id] || [];
-  return arr.length === ex.sets && arr.filter(s=>s.completed).length === ex.sets;
+function isExerciseComplete(exercise) {
+  const arr = st.active?.sets?.[exercise.id] || [];
+  return arr.length === exercise.sets && arr.filter((s) => s.completed).length === exercise.sets;
 }
 
-function getExerciseList(){ return st.active ? (Program.template[st.active.key] || []) : []; }
-function nextIncompleteIndex(fromIndex){
+function getExerciseList() {
+  return st.active ? Program.template[st.active.key] || [] : [];
+}
+
+function nextIncompleteIndex(fromIndex) {
   const exs = getExerciseList();
-  for(let j = fromIndex + 1; j < exs.length; j++){ if(!isExerciseComplete(exs[j])) return j; }
-  for(let j = 0; j < exs.length; j++){ if(!isExerciseComplete(exs[j])) return j; }
+  for (let j = fromIndex + 1; j < exs.length; j++) if (!isExerciseComplete(exs[j])) return j;
+  for (let j = 0; j < exs.length; j++) if (!isExerciseComplete(exs[j])) return j;
   return -1;
 }
 
-function promptAfterExerciseComplete(idx){
+function promptAfterExerciseComplete(idx) {
   const exs = getExerciseList();
   const nextIdx = nextIncompleteIndex(idx);
-  if(nextIdx === -1){ toast("All exercises complete"); renderWorkout(); setActiveTab("workout"); return; }
+
+  if (nextIdx === -1) {
+    toast("All exercises complete");
+    renderWorkout();
+    setActiveTab("workout");
+    return;
+  }
+
   const nextName = exs[nextIdx].name;
   const ok = confirm(`Exercise complete.\n\nNext: ${nextName}\n\nOK = Next, Cancel = Workout list.`);
-  if(ok) openDetail(exs[nextIdx], nextIdx);
-  else { renderWorkout(); setActiveTab("workout"); }
+  if (ok) openDetail(exs[nextIdx], nextIdx);
+  else {
+    renderWorkout();
+    setActiveTab("workout");
+  }
 }
 
-function renderSets(ex){
+function renderSets(exercise) {
   setsEl.innerHTML = "";
-  const arr = st.active.sets[ex.id];
+  const arr = st.active.sets[exercise.id];
 
   arr.forEach((s, idx) => {
     const row = document.createElement("div");
@@ -357,17 +457,17 @@ function renderSets(ex){
     setsEl.appendChild(row);
   });
 
-  setsEl.querySelectorAll("input").forEach(inp => {
+  setsEl.querySelectorAll("input").forEach((inp) => {
     inp.oninput = () => {
       const i = Number(inp.dataset.i);
       const k = inp.dataset.k;
-      st.active.sets[ex.id][i][k] = inp.value;
+      st.active.sets[exercise.id][i][k] = inp.value;
       save(st);
     };
 
     const commit = () => {
       const i = Number(inp.dataset.i);
-      const s = st.active.sets[ex.id][i];
+      const s = st.active.sets[exercise.id][i];
 
       const repsN = normalizeInt(s.reps);
       s.reps = repsN == null ? "" : String(repsN);
@@ -376,7 +476,7 @@ function renderSets(ex){
       s.weight = wN == null ? "" : fmtKg(wN);
 
       const rpeN = normalizeNum(s.rpe);
-      s.rpe = rpeN == null ? (s.rpe || "8.0") : (Math.round(rpeN * 10) / 10).toFixed(1);
+      s.rpe = rpeN == null ? s.rpe || "8.0" : (Math.round(rpeN * 10) / 10).toFixed(1);
 
       const was = s.completed;
       s.completed = computeCompleted(s);
@@ -384,42 +484,57 @@ function renderSets(ex){
       save(st);
       renderWorkout();
 
-      if(!was && s.completed){
-        startRest(ex.rest, ex.name);
-        renderSets(ex);
+      if (!was && s.completed) {
+        startRest(exercise.rest, exercise.name);
+        renderSets(exercise);
         toast(`Set ${s.setIndex} complete`);
       }
 
-      if(currentExercise && isExerciseComplete(ex)){
+      if (currentExercise && isExerciseComplete(exercise)) {
         promptAfterExerciseComplete(currentExercise.index);
       }
     };
 
     inp.onblur = commit;
     inp.onchange = commit;
-    inp.onkeydown = (e) => { if(e.key === "Enter"){ inp.blur(); } };
+    inp.onkeydown = (e) => {
+      if (e.key === "Enter") inp.blur();
+    };
   });
 }
 
-backBtn.onclick = () => { renderWorkout(); setActiveTab("workout"); };
-doneBtn.onclick = () => { renderWorkout(); setActiveTab("workout"); };
-saveAllBtn.onclick = () => { save(st); toast("Saved"); };
+backBtn.onclick = () => {
+  renderWorkout();
+  setActiveTab("workout");
+};
+doneBtn.onclick = () => {
+  renderWorkout();
+  setActiveTab("workout");
+};
+saveAllBtn.onclick = () => {
+  save(st);
+  toast("Saved");
+};
 
+// --------------- Finish workout ---------------
 finishBtn.onclick = () => {
-  if(!st.active) return;
+  if (!st.active) return;
+
   st.history.push({
     id: st.active.id,
-    key: st.active.key,           // store key for better name mapping
+    key: st.active.key, // store program key for accurate mapping later
     name: st.active.name,
-    week: Math.floor(st.progression.completedSessions/5) + 1,
+    week: Math.floor(st.progression.completedSessions / 5) + 1,
     startedAt: st.active.startedAt,
     finishedAt: Date.now(),
-    sets: st.active.sets
+    sets: st.active.sets,
   });
+
   st.active = null;
   st.progression.completedSessions += 1;
   st.progression.nextIndex = (st.progression.nextIndex + 1) % Program.cycle.length;
-  st.timer = { running:false, endAt:0, lastShownDone:false, label:"" };
+  st.timer = { running: false, endAt: 0, lastShownDone: false, label: "" };
+
   save(st);
   render();
   renderHistory();
@@ -427,31 +542,125 @@ finishBtn.onclick = () => {
   toast("Workout saved");
 };
 
-// ---------- HISTORY (Editable) ----------
-function guessKeyFromName(name){
+// --------------- History: Edit + Safe Delete ---------------
+function guessKeyFromName(name) {
   const n = String(name || "").toLowerCase();
-  if(n.includes("upper a")) return "UA";
-  if(n.includes("lower a")) return "LA";
-  if(n.includes("upper b")) return "UB";
-  if(n.includes("upper c")) return "UC";
-  if(n.includes("lower b")) return "LB";
+  if (n.includes("upper a")) return "UA";
+  if (n.includes("lower a")) return "LA";
+  if (n.includes("upper b")) return "UB";
+  if (n.includes("upper c")) return "UC";
+  if (n.includes("lower b")) return "LB";
   return "UA";
 }
 
-function getExerciseNameById(sessionKey, exId){
+function getExerciseNameById(sessionKey, exId) {
   const arr = Program.template[sessionKey] || [];
-  const found = arr.find(x => x.id === exId);
+  const found = arr.find((x) => x.id === exId);
   return found ? found.name : exId;
 }
-function countCompletedSets(setsArr){
-  return (setsArr || []).filter(s => s && s.completed).length;
+
+function countCompletedSets(setsArr) {
+  return (setsArr || []).filter((s) => s && s.completed).length;
 }
 
-function renderHistory(){
+function buildSetLine(s) {
+  const w = (s?.weight ?? "").toString().trim();
+  const r = (s?.reps ?? "").toString().trim();
+  const rpe = (s?.rpe ?? "").toString().trim();
+
+  const pieces = [];
+  if (w) pieces.push(`${w}kg`);
+  if (r) pieces.push(`${r} reps`);
+  if (rpe) pieces.push(`RPE ${rpe}`);
+  pieces.push(s?.completed ? "Done" : "Not done");
+  return pieces.join(" • ");
+}
+
+function applyHistoryEdit(inp) {
+  const sid = inp.dataset.sid;
+  const exId = inp.dataset.ex;
+  const si = Number(inp.dataset.si);
+  const k = inp.dataset.k;
+
+  const idx = st.history.findIndex((x) => x.id === sid);
+  if (idx === -1) return;
+
+  const sess = st.history[idx];
+  if (!sess.sets || !sess.sets[exId] || !sess.sets[exId][si]) return;
+
+  if (k === "completed") {
+    sess.sets[exId][si].completed = !!inp.checked;
+  } else {
+    sess.sets[exId][si][k] = inp.value;
+  }
+
+  // Live-save drafts
+  save(st);
+}
+
+function deleteSingleSession(sessionId) {
+  const idx = st.history.findIndex((x) => x.id === sessionId);
+  if (idx === -1) return;
+
+  const sess = st.history[idx];
+  const name = sess?.name ? ` (${sess.name})` : "";
+  const ok = confirm(`Delete this session${name}? This cannot be undone.`);
+  if (!ok) return;
+
+  if (editingSessionId === sessionId) {
+    editingSessionId = null;
+    editSnapshot.delete(sessionId);
+  }
+
+  st.history.splice(idx, 1);
+  save(st);
+  renderHistory();
+  toast("Session deleted");
+}
+
+function deleteHistoryByRange(mode) {
+  if (!st.history?.length) {
+    toast("No history to delete");
+    return;
+  }
+
+  if (mode === "all") {
+    const ok = confirm("Delete ALL history? This cannot be undone.");
+    if (!ok) return;
+    st.history = [];
+    save(st);
+    renderHistory();
+    toast("All history deleted");
+    return;
+  }
+
+  const now = Date.now();
+  const cutoff = now - (mode === "7d" ? msDays(7) : msDays(30));
+  const label = mode === "7d" ? "the last 7 days" : "the last 30 days";
+
+  const ok = confirm(`Delete sessions from ${label}? This cannot be undone.`);
+  if (!ok) return;
+
+  st.history = st.history.filter((sess) => {
+    const t = sess.finishedAt || sess.startedAt || 0;
+    return t < cutoff;
+  });
+
+  // If we deleted the currently-edited session, reset edit mode
+  if (editingSessionId && !st.history.some((s) => s.id === editingSessionId)) {
+    editingSessionId = null;
+  }
+
+  save(st);
+  renderHistory();
+  toast("History deleted");
+}
+
+function renderHistory() {
   exportOut.classList.add("hidden");
   historyList.innerHTML = "";
 
-  if(!st.history.length){
+  if (!st.history.length) {
     const d = document.createElement("div");
     d.className = "item";
     d.innerHTML = `<div class="name">No sessions yet</div><div class="meta">Finish a workout to save it here.</div>`;
@@ -459,11 +668,34 @@ function renderHistory(){
     return;
   }
 
+  // Global Manage History card (safe deletion)
+  const global = document.createElement("div");
+  global.className = "card";
+  global.innerHTML = `
+    <div class="row">
+      <div>
+        <div class="h">Manage History</div>
+        <div class="s">Delete logs safely with confirmation.</div>
+      </div>
+      <div class="pill subtle">${st.history.length} sessions</div>
+    </div>
+    <div class="histActions">
+      <button class="histBtn warn" type="button" id="del7">Delete last 7 days</button>
+      <button class="histBtn warn" type="button" id="del30">Delete last 30 days</button>
+      <button class="histBtn danger" type="button" id="delAll">Delete all</button>
+    </div>
+  `;
+  historyList.appendChild(global);
+
+  global.querySelector("#del7").onclick = () => deleteHistoryByRange("7d");
+  global.querySelector("#del30").onclick = () => deleteHistoryByRange("30d");
+  global.querySelector("#delAll").onclick = () => deleteHistoryByRange("all");
+
   const sessions = [...st.history].slice().reverse();
 
-  sessions.forEach(sess => {
+  sessions.forEach((sess) => {
     const sessKey = sess.key || guessKeyFromName(sess.name);
-    const setsDone = Object.values(sess.sets || {}).reduce((a, arr)=>a + countCompletedSets(arr), 0);
+    const setsDone = Object.values(sess.sets || {}).reduce((a, arr) => a + countCompletedSets(arr), 0);
     const isEditing = editingSessionId === sess.id;
 
     const details = document.createElement("details");
@@ -485,11 +717,11 @@ function renderHistory(){
     const body = document.createElement("div");
     body.className = "histBody";
 
-    // Edit controls
+    // Session action bar
     const bar = document.createElement("div");
     bar.className = "histBar";
 
-    if(!isEditing){
+    if (!isEditing) {
       const editBtn = document.createElement("button");
       editBtn.className = "histBtn";
       editBtn.type = "button";
@@ -497,16 +729,28 @@ function renderHistory(){
       editBtn.onclick = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        // Only one session editable at a time
+
+        // One editable at a time
         editingSessionId = sess.id;
         editSnapshot.set(sess.id, deepCopy(sess));
         renderHistory();
       };
       bar.appendChild(editBtn);
 
+      const delBtn = document.createElement("button");
+      delBtn.className = "histBtn danger";
+      delBtn.type = "button";
+      delBtn.textContent = "Delete session";
+      delBtn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        deleteSingleSession(sess.id);
+      };
+      bar.appendChild(delBtn);
+
       const hint = document.createElement("div");
       hint.className = "s";
-      hint.textContent = "Tap Edit to correct wrong entries.";
+      hint.textContent = "Tap Edit to correct entries.";
       bar.appendChild(hint);
     } else {
       const saveBtn = document.createElement("button");
@@ -531,10 +775,9 @@ function renderHistory(){
         e.preventDefault();
         e.stopPropagation();
         const snap = editSnapshot.get(sess.id);
-        if(snap){
-          // Restore the snapshot in st.history
-          const idx = st.history.findIndex(x => x.id === sess.id);
-          if(idx !== -1) st.history[idx] = snap;
+        if (snap) {
+          const idx = st.history.findIndex((x) => x.id === sess.id);
+          if (idx !== -1) st.history[idx] = snap;
           save(st);
         }
         editingSessionId = null;
@@ -550,20 +793,21 @@ function renderHistory(){
     body.appendChild(bar);
 
     const exIds = Object.keys(sess.sets || {});
-    if(!exIds.length){
+    if (!exIds.length) {
       body.insertAdjacentHTML("beforeend", `<div class="s">No exercise data saved for this session.</div>`);
     } else {
       // Order by program sequence where possible
-      const order = (Program.template[sessKey] || []).map(x => x.id);
-      const sorted = exIds.slice().sort((a,b) => {
-        const ia = order.indexOf(a); const ib = order.indexOf(b);
-        if(ia === -1 && ib === -1) return a.localeCompare(b);
-        if(ia === -1) return 1;
-        if(ib === -1) return -1;
+      const order = (Program.template[sessKey] || []).map((x) => x.id);
+      const sorted = exIds.slice().sort((a, b) => {
+        const ia = order.indexOf(a);
+        const ib = order.indexOf(b);
+        if (ia === -1 && ib === -1) return a.localeCompare(b);
+        if (ia === -1) return 1;
+        if (ib === -1) return -1;
         return ia - ib;
       });
 
-      sorted.forEach(exId => {
+      sorted.forEach((exId) => {
         const setsArr = sess.sets[exId] || [];
         const done = countCompletedSets(setsArr);
         const planned = setsArr.length || "—";
@@ -580,19 +824,18 @@ function renderHistory(){
         setsWrap.className = "histSets";
 
         setsArr.forEach((s, si) => {
-          if(!isEditing){
+          if (!isEditing) {
             const row = document.createElement("div");
             row.className = "histSetRow";
-            const line = buildSetLine(s);
             row.innerHTML = `
               <div class="l">Set ${esc(s?.setIndex ?? "")}</div>
-              <div class="r">${esc(line)}</div>
+              <div class="r">${esc(buildSetLine(s))}</div>
             `;
             setsWrap.appendChild(row);
             return;
           }
 
-          // Editing row
+          // Edit row
           const er = document.createElement("div");
           er.className = "histEditRow";
           er.innerHTML = `
@@ -613,71 +856,40 @@ function renderHistory(){
     details.appendChild(body);
     historyList.appendChild(details);
 
-    // If editing, wire inputs for this details block
-    if(isEditing){
-      details.querySelectorAll("input").forEach(inp => {
+    if (isEditing) {
+      details.open = true; // keep open while editing
+      details.querySelectorAll("input").forEach((inp) => {
         inp.oninput = () => applyHistoryEdit(inp);
         inp.onchange = () => applyHistoryEdit(inp);
-        inp.onkeydown = (e) => { if(e.key === "Enter"){ inp.blur(); } };
+        inp.onkeydown = (e) => {
+          if (e.key === "Enter") inp.blur();
+        };
       });
-
-      // Keep it open while editing
-      details.open = true;
     }
   });
 }
 
-function buildSetLine(s){
-  const w = (s?.weight ?? "").toString().trim();
-  const r = (s?.reps ?? "").toString().trim();
-  const rpe = (s?.rpe ?? "").toString().trim();
-  const pieces = [];
-  if(w) pieces.push(`${w}kg`);
-  if(r) pieces.push(`${r} reps`);
-  if(rpe) pieces.push(`RPE ${rpe}`);
-  pieces.push(s?.completed ? "Done" : "Not done");
-  return pieces.join(" • ");
-}
-
-function applyHistoryEdit(inp){
-  const sid = inp.dataset.sid;
-  const exId = inp.dataset.ex;
-  const si = Number(inp.dataset.si);
-  const k = inp.dataset.k;
-
-  const idx = st.history.findIndex(x => x.id === sid);
-  if(idx === -1) return;
-
-  const sess = st.history[idx];
-  if(!sess.sets || !sess.sets[exId] || !sess.sets[exId][si]) return;
-
-  if(k === "completed"){
-    sess.sets[exId][si].completed = !!inp.checked;
-  } else {
-    sess.sets[exId][si][k] = inp.value;
-  }
-
-  // live-save draft
-  save(st);
-}
-
 exportBtn.onclick = () => {
   exportOut.classList.toggle("hidden");
-  if(!exportOut.classList.contains("hidden")){
+  if (!exportOut.classList.contains("hidden")) {
     exportOut.textContent = JSON.stringify(st, null, 2);
   }
 };
 
-// ---------- Settings ----------
-function renderSettings(){
+// --------------- Settings ---------------
+function renderSettings() {
   benchW.value = st.settings.benchW;
   benchR.value = st.settings.benchR;
   bench1rmEl.textContent = `Bench 1RM est: ${bench1rm(st.settings.benchW, st.settings.benchR).toFixed(1)} kg`;
 }
+
 saveSettingsBtn.onclick = () => {
   const w = normalizeNum(benchW.value);
   const r = normalizeInt(benchR.value);
-  if(w==null || w<=0 || r==null || r<=0){ toast("Enter valid bench"); return; }
+  if (w == null || w <= 0 || r == null || r <= 0) {
+    toast("Enter valid bench");
+    return;
+  }
   st.settings.benchW = w;
   st.settings.benchR = r;
   save(st);
@@ -686,23 +898,32 @@ saveSettingsBtn.onclick = () => {
   toast("Saved");
 };
 
-// ---------- Storage ----------
-function load(){
-  try{
+// --------------- Storage ---------------
+function load() {
+  try {
     const raw = localStorage.getItem(LS_KEY);
-    if(!raw) return defaultState();
+    if (!raw) return defaultState();
     const parsed = JSON.parse(raw);
-    if(!parsed.history) parsed.history = [];
-    if(!parsed.timer) parsed.timer = { running:false, endAt:0, lastShownDone:false, label:"" };
+    if (!parsed.history) parsed.history = [];
+    if (!parsed.timer) parsed.timer = { running: false, endAt: 0, lastShownDone: false, label: "" };
     return parsed;
-  }catch{ return defaultState(); }
+  } catch {
+    return defaultState();
+  }
 }
-function save(s){ localStorage.setItem(LS_KEY, JSON.stringify(s)); }
-function el(id){ return document.getElementById(id); }
 
-// init
+function save(s) {
+  localStorage.setItem(LS_KEY, JSON.stringify(s));
+}
+
+function el(id) {
+  return document.getElementById(id);
+}
+
+// --------------- Init ---------------
 ensureTimer();
 render();
-renderSettings();
+renderWorkout();
 renderHistory();
+renderSettings();
 setActiveTab("today");
