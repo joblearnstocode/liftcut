@@ -1,4 +1,4 @@
-const LS_KEY = "liftcut_state_v3_prompt_timer_dot";
+const LS_KEY = "liftcut_state_v5_history_accordion";
 
 const Program = {
   cycle: [
@@ -61,7 +61,7 @@ function defaultState(){
     progression: { completedSessions: 0, nextIndex: 0 },
     active: null,
     history: [],
-    timer: { running:false, remaining:0, label:"" }
+    timer: { running:false, endAt:0, lastShownDone:false, label:"" }
   };
 }
 
@@ -165,6 +165,14 @@ function fmtDate(ts){
   const time = d.toLocaleTimeString(undefined, { hour:"numeric", minute:"2-digit" });
   return `${day} • ${time}`;
 }
+function esc(s){
+  return String(s ?? "").replace(/[&<>"']/g, ch => (
+    ch === "&" ? "&amp;" :
+    ch === "<" ? "&lt;" :
+    ch === ">" ? "&gt;" :
+    ch === `"` ? "&quot;" : "&#39;"
+  ));
+}
 function normalizeNum(v){
   const n = parseFloat(String(v).replace(",", "."));
   return isFinite(n) ? n : null;
@@ -174,42 +182,53 @@ function normalizeInt(v){
   return isFinite(n) ? n : null;
 }
 
-// ---------- Timer ----------
+// ---------- Timer (kept; not the focus) ----------
+function remainingSeconds(){
+  if(!st.timer?.running) return 0;
+  const diff = st.timer.endAt - Date.now();
+  return Math.max(0, Math.ceil(diff / 1000));
+}
 function ensureTimer(){
   if(timerInterval) return;
   timerInterval = setInterval(() => {
-    if(!st.timer.running) return;
-    if(st.timer.remaining <= 0){
-      st.timer.running = false;
-      st.timer.remaining = 0;
-      save(st);
-      renderRestPill();
-      toast("Rest complete");
-      return;
-    }
-    st.timer.remaining -= 1;
-    save(st);
+    if(!st.timer?.running) return;
+    const rem = remainingSeconds();
     renderRestPill();
-  }, 1000);
+    if(rem <= 0){
+      st.timer.running = false;
+      st.timer.endAt = 0;
+      if(!st.timer.lastShownDone){
+        st.timer.lastShownDone = true;
+        save(st);
+        toast("Rest complete");
+      } else {
+        save(st);
+      }
+      renderRestPill();
+    } else {
+      st.timer.lastShownDone = false;
+      save(st);
+    }
+  }, 500);
 }
-
 function startRest(seconds, label){
   ensureTimer();
+  const secs = Math.max(0, Math.round(seconds));
   st.timer.running = true;
-  st.timer.remaining = Math.max(0, Math.round(seconds));
+  st.timer.endAt = Date.now() + secs * 1000;
   st.timer.label = label || "";
+  st.timer.lastShownDone = false;
   save(st);
   renderRestPill();
 }
-
 function renderRestPill(){
   if(!currentExercise){
     restPill.textContent = "Rest —";
     return;
   }
   const base = `Rest ${fmtMin(currentExercise.ex.rest)}`;
-  if(st.timer.running){
-    restPill.textContent = `${base} • ${fmtClock(st.timer.remaining)}`;
+  if(st.timer?.running){
+    restPill.textContent = `${base} • ${fmtClock(remainingSeconds())}`;
   } else {
     restPill.textContent = base;
   }
@@ -252,10 +271,10 @@ function render(){
     div.className = "item";
     div.innerHTML = `
       <div class="topline">
-        <div class="name">${ex.name}</div>
-        <div class="pill">${w==null ? "RPE-based" : `Plan ${fmtKg(w)} ${ex.unit}`}</div>
+        <div class="name">${esc(ex.name)}</div>
+        <div class="pill">${w==null ? "RPE-based" : `Plan ${fmtKg(w)} ${esc(ex.unit)}`}</div>
       </div>
-      <div class="meta">${ex.sets} sets • ${ex.reps} • Rest ${fmtMin(ex.rest)}</div>
+      <div class="meta">${ex.sets} sets • ${esc(ex.reps)} • Rest ${fmtMin(ex.rest)}</div>
     `;
     exercisePreview.appendChild(div);
   });
@@ -277,10 +296,10 @@ function renderWorkout(){
     const done = (st.active.sets[ex.id] || []).filter(s=>s.completed).length;
     div.innerHTML = `
       <div class="topline">
-        <div class="name">${ex.name}</div>
-        <div class="pill">${w==null ? "RPE" : `${fmtKg(w)} ${ex.unit}`}</div>
+        <div class="name">${esc(ex.name)}</div>
+        <div class="pill">${w==null ? "RPE" : `${fmtKg(w)} ${esc(ex.unit)}`}</div>
       </div>
-      <div class="meta">${done}/${ex.sets} sets • ${ex.reps} • Rest ${fmtMin(ex.rest)}</div>
+      <div class="meta">${done}/${ex.sets} sets • ${esc(ex.reps)} • Rest ${fmtMin(ex.rest)}</div>
     `;
     div.onclick = () => openDetail(ex, i);
     workoutList.appendChild(div);
@@ -292,12 +311,10 @@ function getExerciseList(){
   if(!st.active) return [];
   return Program.template[st.active.key];
 }
-
 function isExerciseComplete(ex){
   const arr = st.active?.sets?.[ex.id] || [];
   return arr.length === ex.sets && arr.filter(s=>s.completed).length === ex.sets;
 }
-
 function nextIncompleteIndex(fromIndex){
   const exs = getExerciseList();
   for(let j = fromIndex + 1; j < exs.length; j++){
@@ -306,7 +323,7 @@ function nextIncompleteIndex(fromIndex){
   for(let j = 0; j < exs.length; j++){
     if(!isExerciseComplete(exs[j])) return j;
   }
-  return -1; // all done
+  return -1;
 }
 
 // ---------- Detail ----------
@@ -353,14 +370,13 @@ function renderSets(ex){
         <div>Set ${s.setIndex}</div>
         <div class="doneDot ${s.completed ? "on" : ""}"></div>
       </div>
-      <input inputmode="decimal" placeholder="Weight" value="${s.weight || ""}" data-i="${idx}" data-k="weight" />
-      <input inputmode="numeric" placeholder="Reps" value="${s.reps || ""}" data-i="${idx}" data-k="reps" />
-      <input inputmode="decimal" placeholder="RPE" value="${s.rpe || "8.0"}" data-i="${idx}" data-k="rpe" />
+      <input inputmode="decimal" placeholder="Weight" value="${esc(s.weight || "")}" data-i="${idx}" data-k="weight" />
+      <input inputmode="numeric" placeholder="Reps" value="${esc(s.reps || "")}" data-i="${idx}" data-k="reps" />
+      <input inputmode="decimal" placeholder="RPE" value="${esc(s.rpe || "8.0")}" data-i="${idx}" data-k="rpe" />
     `;
     setsEl.appendChild(row);
   });
 
-  // draft-save on input, commit on blur/enter
   setsEl.querySelectorAll("input").forEach(inp => {
     inp.oninput = () => {
       const i = Number(inp.dataset.i);
@@ -373,7 +389,6 @@ function renderSets(ex){
       const i = Number(inp.dataset.i);
       const s = st.active.sets[ex.id][i];
 
-      // normalize on commit
       const repsN = normalizeInt(s.reps);
       s.reps = repsN == null ? "" : String(repsN);
 
@@ -389,14 +404,12 @@ function renderSets(ex){
       save(st);
       renderWorkout();
 
-      // on first-time completion: start rest + refresh dots
       if(!was && s.completed){
         startRest(ex.rest, ex.name);
-        renderSets(ex); // refresh completion dots
+        renderSets(ex);
         toast(`Set ${s.setIndex} complete`);
       }
 
-      // if whole exercise complete: show prompt
       if(currentExercise && isExerciseComplete(ex)){
         promptAfterExerciseComplete(currentExercise.index);
       }
@@ -448,7 +461,7 @@ finishBtn.onclick = () => {
   st.progression.completedSessions += 1;
   st.progression.nextIndex = (st.progression.nextIndex + 1) % Program.cycle.length;
 
-  st.timer = { running:false, remaining:0, label:"" };
+  st.timer = { running:false, endAt:0, lastShownDone:false, label:"" };
   save(st);
 
   render();
@@ -457,10 +470,30 @@ finishBtn.onclick = () => {
   toast("Workout saved");
 };
 
-// ---------- History ----------
+// ---------- HISTORY (UPGRADED) ----------
+function getExerciseNameById(sessionKey, exId){
+  const arr = Program.template[sessionKey] || [];
+  const found = arr.find(x => x.id === exId);
+  return found ? found.name : exId;
+}
+function countCompletedSets(setsArr){
+  return (setsArr || []).filter(s => s && s.completed).length;
+}
+function formatSetLine(s){
+  const w = (s?.weight ?? "").toString().trim();
+  const r = (s?.reps ?? "").toString().trim();
+  const rpe = (s?.rpe ?? "").toString().trim();
+  const pieces = [];
+  if(w) pieces.push(`${w}kg`);
+  if(r) pieces.push(`${r} reps`);
+  if(rpe) pieces.push(`RPE ${rpe}`);
+  return pieces.length ? pieces.join(" • ") : "—";
+}
+
 function renderHistory(){
   exportOut.classList.add("hidden");
   historyList.innerHTML = "";
+
   if(!st.history.length){
     const d = document.createElement("div");
     d.className = "item";
@@ -468,20 +501,90 @@ function renderHistory(){
     historyList.appendChild(d);
     return;
   }
-  [...st.history].slice().reverse().forEach(sess => {
-    const setsDone = Object.values(sess.sets || {}).reduce((a, arr)=>a+(arr?.filter(x=>x.completed).length||0),0);
-    const div = document.createElement("div");
-    div.className = "item";
-    div.innerHTML = `
-      <div class="topline">
-        <div class="name">${sess.name}</div>
-        <div class="pill">Week ${sess.week}</div>
+
+  const sessions = [...st.history].slice().reverse();
+
+  sessions.forEach(sess => {
+    const setsDone = Object.values(sess.sets || {}).reduce((a, arr)=>a + countCompletedSets(arr), 0);
+
+    const details = document.createElement("details");
+    details.className = "histDetails";
+
+    const summary = document.createElement("summary");
+    summary.className = "histSummary";
+    summary.innerHTML = `
+      <div class="histHead">
+        <div>
+          <div class="histTitle">${esc(sess.name || "Session")}</div>
+          <div class="histMeta">${esc(fmtDate(sess.finishedAt || sess.startedAt || Date.now()))} • Completed sets: ${setsDone}</div>
+        </div>
+        <div class="pill">Week ${esc(sess.week ?? "—")}</div>
       </div>
-      <div class="meta">${fmtDate(sess.finishedAt)} • Completed sets: ${setsDone}</div>
     `;
-    div.onclick = () => toast(`${sess.name} • Sets: ${setsDone}`);
-    historyList.appendChild(div);
+    details.appendChild(summary);
+
+    const body = document.createElement("div");
+    body.className = "histBody";
+
+    const exIds = Object.keys(sess.sets || {});
+    if(!exIds.length){
+      body.innerHTML = `<div class="s">No exercise data saved for this session.</div>`;
+    } else {
+      // Preserve original program order where possible:
+      const order = (Program.template[sess.key] || Program.template[guessKeyFromName(sess.name)] || []).map(x => x.id);
+      const sorted = exIds.slice().sort((a,b) => {
+        const ia = order.indexOf(a); const ib = order.indexOf(b);
+        if(ia === -1 && ib === -1) return a.localeCompare(b);
+        if(ia === -1) return 1;
+        if(ib === -1) return -1;
+        return ia - ib;
+      });
+
+      sorted.forEach(exId => {
+        const setsArr = sess.sets[exId] || [];
+        const done = countCompletedSets(setsArr);
+        const planned = setsArr.length || "—";
+        const exName = getExerciseNameById(sess.key || guessKeyFromName(sess.name), exId);
+
+        const exBlock = document.createElement("div");
+        exBlock.className = "histExercise";
+        exBlock.innerHTML = `
+          <div class="histExName">${esc(exName)}</div>
+          <div class="histExSub">${done}/${planned} sets completed</div>
+        `;
+
+        const setsWrap = document.createElement("div");
+        setsWrap.className = "histSets";
+
+        setsArr.forEach(s => {
+          const row = document.createElement("div");
+          row.className = "histSetRow";
+          row.innerHTML = `
+            <div class="l">Set ${esc(s?.setIndex ?? "")}</div>
+            <div class="r">${esc(formatSetLine(s))}</div>
+          `;
+          setsWrap.appendChild(row);
+        });
+
+        exBlock.appendChild(setsWrap);
+        body.appendChild(exBlock);
+      });
+    }
+
+    details.appendChild(body);
+    historyList.appendChild(details);
   });
+}
+
+// Try to infer key from name (works with your cycle naming)
+function guessKeyFromName(name){
+  const n = String(name || "").toLowerCase();
+  if(n.includes("upper a")) return "UA";
+  if(n.includes("lower a")) return "LA";
+  if(n.includes("upper b")) return "UB";
+  if(n.includes("upper c")) return "UC";
+  if(n.includes("lower b")) return "LB";
+  return "UA";
 }
 
 exportBtn.onclick = () => {
@@ -517,7 +620,7 @@ function load(){
     if(!raw) return defaultState();
     const parsed = JSON.parse(raw);
     if(!parsed.history) parsed.history = [];
-    if(!parsed.timer) parsed.timer = { running:false, remaining:0, label:"" };
+    if(!parsed.timer) parsed.timer = { running:false, endAt:0, lastShownDone:false, label:"" };
     return parsed;
   }catch{ return defaultState(); }
 }
