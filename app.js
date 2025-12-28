@@ -1,4 +1,4 @@
-const LS_KEY = "liftcut_state_v5_history_accordion";
+const LS_KEY = "liftcut_state_v5_history_accordion"; // keep same key to preserve your data
 
 const Program = {
   cycle: [
@@ -67,6 +67,10 @@ function defaultState(){
 
 let st = load();
 
+// Edit buffers (in-memory only)
+let editingSessionId = null;
+const editSnapshot = new Map(); // sessionId -> deep copy snapshot
+
 // UI refs
 const subhead = el("subhead");
 const tabToday = el("tabToday");
@@ -111,7 +115,7 @@ const saveSettingsBtn = el("saveSettingsBtn");
 const toastEl = el("toast");
 let toastTimer = null;
 
-let currentExercise = null; // { ex, index }
+let currentExercise = null;
 let timerInterval = null;
 
 // ---------- Tabs ----------
@@ -138,9 +142,8 @@ function toast(msg){
   toastTimer = setTimeout(() => toastEl.classList.add("hidden"), 1500);
 }
 
-// ---------- Math / planning ----------
+// ---------- Helpers ----------
 function bench1rm(w,r){ return w*(1 + (r/30)); }
-
 function plannedWeight(ex){
   const b1 = bench1rm(st.settings.benchW, st.settings.benchR);
   if(ex.scale.type==="rpe") return null;
@@ -151,14 +154,8 @@ function plannedWeight(ex){
   }
   return null;
 }
-
 function fmtKg(x){ return (x==null || !isFinite(x)) ? "—" : Number(x).toFixed(1); }
 function fmtMin(sec){ return `${Math.round(sec/60)}m`; }
-function fmtClock(sec){
-  const m = Math.floor(sec/60);
-  const s = sec % 60;
-  return `${m}:${String(s).padStart(2,"0")}`;
-}
 function fmtDate(ts){
   const d = new Date(ts);
   const day = d.toLocaleDateString(undefined, { weekday:"short", month:"short", day:"numeric" });
@@ -173,6 +170,7 @@ function esc(s){
     ch === `"` ? "&quot;" : "&#39;"
   ));
 }
+function deepCopy(obj){ return JSON.parse(JSON.stringify(obj)); }
 function normalizeNum(v){
   const n = parseFloat(String(v).replace(",", "."));
   return isFinite(n) ? n : null;
@@ -182,7 +180,7 @@ function normalizeInt(v){
   return isFinite(n) ? n : null;
 }
 
-// ---------- Timer (kept; not the focus) ----------
+// ---------- Timer (kept; not focus) ----------
 function remainingSeconds(){
   if(!st.timer?.running) return 0;
   const diff = st.timer.endAt - Date.now();
@@ -201,9 +199,7 @@ function ensureTimer(){
         st.timer.lastShownDone = true;
         save(st);
         toast("Rest complete");
-      } else {
-        save(st);
-      }
+      } else save(st);
       renderRestPill();
     } else {
       st.timer.lastShownDone = false;
@@ -222,40 +218,26 @@ function startRest(seconds, label){
   renderRestPill();
 }
 function renderRestPill(){
-  if(!currentExercise){
-    restPill.textContent = "Rest —";
-    return;
-  }
+  if(!currentExercise){ restPill.textContent = "Rest —"; return; }
   const base = `Rest ${fmtMin(currentExercise.ex.rest)}`;
   if(st.timer?.running){
-    restPill.textContent = `${base} • ${fmtClock(remainingSeconds())}`;
-  } else {
-    restPill.textContent = base;
-  }
+    const rem = remainingSeconds();
+    const m = Math.floor(rem/60);
+    const s = rem % 60;
+    restPill.textContent = `${base} • ${m}:${String(s).padStart(2,"0")}`;
+  } else restPill.textContent = base;
 }
 
 // ---------- Session ----------
 function ensureActive(){
   if(st.active) return;
   const next = Program.cycle[st.progression.nextIndex % Program.cycle.length];
-  st.active = {
-    id: crypto.randomUUID(),
-    key: next.key,
-    name: next.name,
-    suggested: next.suggested,
-    startedAt: Date.now(),
-    sets: {}
-  };
+  st.active = { id: crypto.randomUUID(), key: next.key, name: next.name, suggested: next.suggested, startedAt: Date.now(), sets: {} };
   save(st);
 }
+startBtn.onclick = () => { ensureActive(); renderWorkout(); setActiveTab("workout"); };
 
-startBtn.onclick = () => {
-  ensureActive();
-  renderWorkout();
-  setActiveTab("workout");
-};
-
-// ---------- Rendering ----------
+// ---------- Today render ----------
 function render(){
   const next = Program.cycle[st.progression.nextIndex % Program.cycle.length];
   const b1 = bench1rm(st.settings.benchW, st.settings.benchR);
@@ -282,6 +264,7 @@ function render(){
   tabWorkout.style.opacity = st.active ? "1" : "0.5";
 }
 
+// ---------- Workout ----------
 function renderWorkout(){
   workoutList.innerHTML = "";
   workoutTitle.textContent = st.active ? st.active.name : "Workout";
@@ -306,39 +289,14 @@ function renderWorkout(){
   });
 }
 
-// ---------- Next exercise logic ----------
-function getExerciseList(){
-  if(!st.active) return [];
-  return Program.template[st.active.key];
-}
-function isExerciseComplete(ex){
-  const arr = st.active?.sets?.[ex.id] || [];
-  return arr.length === ex.sets && arr.filter(s=>s.completed).length === ex.sets;
-}
-function nextIncompleteIndex(fromIndex){
-  const exs = getExerciseList();
-  for(let j = fromIndex + 1; j < exs.length; j++){
-    if(!isExerciseComplete(exs[j])) return j;
-  }
-  for(let j = 0; j < exs.length; j++){
-    if(!isExerciseComplete(exs[j])) return j;
-  }
-  return -1;
-}
-
 // ---------- Detail ----------
 function openDetail(ex, index){
   currentExercise = { ex, index };
-
   const wPlan = plannedWeight(ex);
 
   if(!st.active.sets[ex.id]){
     st.active.sets[ex.id] = Array.from({length: ex.sets}, (_,i)=>({
-      setIndex: i+1,
-      weight: wPlan != null ? fmtKg(wPlan) : "",
-      reps: "",
-      rpe: "8.0",
-      completed: false
+      setIndex: i+1, weight: wPlan != null ? fmtKg(wPlan) : "", reps: "", rpe: "8.0", completed: false
     }));
     save(st);
   }
@@ -347,7 +305,6 @@ function openDetail(ex, index){
   detailMeta.textContent = `${ex.sets} sets • ${ex.reps}`;
   planPill.textContent = wPlan==null ? "RPE-based" : `Plan ${fmtKg(wPlan)} ${ex.unit}`;
   renderRestPill();
-
   renderSets(ex);
   setActiveTab("detail");
 }
@@ -356,6 +313,29 @@ function computeCompleted(s){
   const reps = normalizeInt(s.reps);
   const w = normalizeNum(s.weight);
   return (reps != null && reps > 0) && (w != null && w > 0);
+}
+
+function isExerciseComplete(ex){
+  const arr = st.active?.sets?.[ex.id] || [];
+  return arr.length === ex.sets && arr.filter(s=>s.completed).length === ex.sets;
+}
+
+function getExerciseList(){ return st.active ? (Program.template[st.active.key] || []) : []; }
+function nextIncompleteIndex(fromIndex){
+  const exs = getExerciseList();
+  for(let j = fromIndex + 1; j < exs.length; j++){ if(!isExerciseComplete(exs[j])) return j; }
+  for(let j = 0; j < exs.length; j++){ if(!isExerciseComplete(exs[j])) return j; }
+  return -1;
+}
+
+function promptAfterExerciseComplete(idx){
+  const exs = getExerciseList();
+  const nextIdx = nextIncompleteIndex(idx);
+  if(nextIdx === -1){ toast("All exercises complete"); renderWorkout(); setActiveTab("workout"); return; }
+  const nextName = exs[nextIdx].name;
+  const ok = confirm(`Exercise complete.\n\nNext: ${nextName}\n\nOK = Next, Cancel = Workout list.`);
+  if(ok) openDetail(exs[nextIdx], nextIdx);
+  else { renderWorkout(); setActiveTab("workout"); }
 }
 
 function renderSets(ex){
@@ -421,36 +401,15 @@ function renderSets(ex){
   });
 }
 
-function promptAfterExerciseComplete(idx){
-  const exs = getExerciseList();
-  const nextIdx = nextIncompleteIndex(idx);
-
-  if(nextIdx === -1){
-    toast("All exercises complete");
-    renderWorkout();
-    setActiveTab("workout");
-    return;
-  }
-
-  const nextName = exs[nextIdx].name;
-  const ok = confirm(`Exercise complete.\n\nNext: ${nextName}\n\nOK = Next, Cancel = Workout list.`);
-  if(ok){
-    openDetail(exs[nextIdx], nextIdx);
-  } else {
-    renderWorkout();
-    setActiveTab("workout");
-  }
-}
-
 backBtn.onclick = () => { renderWorkout(); setActiveTab("workout"); };
 doneBtn.onclick = () => { renderWorkout(); setActiveTab("workout"); };
 saveAllBtn.onclick = () => { save(st); toast("Saved"); };
 
-// ---------- Finish ----------
 finishBtn.onclick = () => {
   if(!st.active) return;
   st.history.push({
     id: st.active.id,
+    key: st.active.key,           // store key for better name mapping
     name: st.active.name,
     week: Math.floor(st.progression.completedSessions/5) + 1,
     startedAt: st.active.startedAt,
@@ -460,17 +419,25 @@ finishBtn.onclick = () => {
   st.active = null;
   st.progression.completedSessions += 1;
   st.progression.nextIndex = (st.progression.nextIndex + 1) % Program.cycle.length;
-
   st.timer = { running:false, endAt:0, lastShownDone:false, label:"" };
   save(st);
-
   render();
   renderHistory();
   setActiveTab("today");
   toast("Workout saved");
 };
 
-// ---------- HISTORY (UPGRADED) ----------
+// ---------- HISTORY (Editable) ----------
+function guessKeyFromName(name){
+  const n = String(name || "").toLowerCase();
+  if(n.includes("upper a")) return "UA";
+  if(n.includes("lower a")) return "LA";
+  if(n.includes("upper b")) return "UB";
+  if(n.includes("upper c")) return "UC";
+  if(n.includes("lower b")) return "LB";
+  return "UA";
+}
+
 function getExerciseNameById(sessionKey, exId){
   const arr = Program.template[sessionKey] || [];
   const found = arr.find(x => x.id === exId);
@@ -478,16 +445,6 @@ function getExerciseNameById(sessionKey, exId){
 }
 function countCompletedSets(setsArr){
   return (setsArr || []).filter(s => s && s.completed).length;
-}
-function formatSetLine(s){
-  const w = (s?.weight ?? "").toString().trim();
-  const r = (s?.reps ?? "").toString().trim();
-  const rpe = (s?.rpe ?? "").toString().trim();
-  const pieces = [];
-  if(w) pieces.push(`${w}kg`);
-  if(r) pieces.push(`${r} reps`);
-  if(rpe) pieces.push(`RPE ${rpe}`);
-  return pieces.length ? pieces.join(" • ") : "—";
 }
 
 function renderHistory(){
@@ -505,7 +462,9 @@ function renderHistory(){
   const sessions = [...st.history].slice().reverse();
 
   sessions.forEach(sess => {
+    const sessKey = sess.key || guessKeyFromName(sess.name);
     const setsDone = Object.values(sess.sets || {}).reduce((a, arr)=>a + countCompletedSets(arr), 0);
+    const isEditing = editingSessionId === sess.id;
 
     const details = document.createElement("details");
     details.className = "histDetails";
@@ -526,12 +485,76 @@ function renderHistory(){
     const body = document.createElement("div");
     body.className = "histBody";
 
+    // Edit controls
+    const bar = document.createElement("div");
+    bar.className = "histBar";
+
+    if(!isEditing){
+      const editBtn = document.createElement("button");
+      editBtn.className = "histBtn";
+      editBtn.type = "button";
+      editBtn.textContent = "Edit";
+      editBtn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        // Only one session editable at a time
+        editingSessionId = sess.id;
+        editSnapshot.set(sess.id, deepCopy(sess));
+        renderHistory();
+      };
+      bar.appendChild(editBtn);
+
+      const hint = document.createElement("div");
+      hint.className = "s";
+      hint.textContent = "Tap Edit to correct wrong entries.";
+      bar.appendChild(hint);
+    } else {
+      const saveBtn = document.createElement("button");
+      saveBtn.className = "histBtn primary";
+      saveBtn.type = "button";
+      saveBtn.textContent = "Save";
+      saveBtn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        save(st);
+        editingSessionId = null;
+        editSnapshot.delete(sess.id);
+        renderHistory();
+        toast("History updated");
+      };
+
+      const cancelBtn = document.createElement("button");
+      cancelBtn.className = "histBtn danger";
+      cancelBtn.type = "button";
+      cancelBtn.textContent = "Cancel";
+      cancelBtn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const snap = editSnapshot.get(sess.id);
+        if(snap){
+          // Restore the snapshot in st.history
+          const idx = st.history.findIndex(x => x.id === sess.id);
+          if(idx !== -1) st.history[idx] = snap;
+          save(st);
+        }
+        editingSessionId = null;
+        editSnapshot.delete(sess.id);
+        renderHistory();
+        toast("Reverted");
+      };
+
+      bar.appendChild(saveBtn);
+      bar.appendChild(cancelBtn);
+    }
+
+    body.appendChild(bar);
+
     const exIds = Object.keys(sess.sets || {});
     if(!exIds.length){
-      body.innerHTML = `<div class="s">No exercise data saved for this session.</div>`;
+      body.insertAdjacentHTML("beforeend", `<div class="s">No exercise data saved for this session.</div>`);
     } else {
-      // Preserve original program order where possible:
-      const order = (Program.template[sess.key] || Program.template[guessKeyFromName(sess.name)] || []).map(x => x.id);
+      // Order by program sequence where possible
+      const order = (Program.template[sessKey] || []).map(x => x.id);
       const sorted = exIds.slice().sort((a,b) => {
         const ia = order.indexOf(a); const ib = order.indexOf(b);
         if(ia === -1 && ib === -1) return a.localeCompare(b);
@@ -544,7 +567,7 @@ function renderHistory(){
         const setsArr = sess.sets[exId] || [];
         const done = countCompletedSets(setsArr);
         const planned = setsArr.length || "—";
-        const exName = getExerciseNameById(sess.key || guessKeyFromName(sess.name), exId);
+        const exName = getExerciseNameById(sessKey, exId);
 
         const exBlock = document.createElement("div");
         exBlock.className = "histExercise";
@@ -556,14 +579,30 @@ function renderHistory(){
         const setsWrap = document.createElement("div");
         setsWrap.className = "histSets";
 
-        setsArr.forEach(s => {
-          const row = document.createElement("div");
-          row.className = "histSetRow";
-          row.innerHTML = `
-            <div class="l">Set ${esc(s?.setIndex ?? "")}</div>
-            <div class="r">${esc(formatSetLine(s))}</div>
+        setsArr.forEach((s, si) => {
+          if(!isEditing){
+            const row = document.createElement("div");
+            row.className = "histSetRow";
+            const line = buildSetLine(s);
+            row.innerHTML = `
+              <div class="l">Set ${esc(s?.setIndex ?? "")}</div>
+              <div class="r">${esc(line)}</div>
+            `;
+            setsWrap.appendChild(row);
+            return;
+          }
+
+          // Editing row
+          const er = document.createElement("div");
+          er.className = "histEditRow";
+          er.innerHTML = `
+            <div class="lbl">Set ${esc(s?.setIndex ?? "")}</div>
+            <input inputmode="decimal" placeholder="kg" value="${esc(s?.weight ?? "")}" data-sid="${esc(sess.id)}" data-ex="${esc(exId)}" data-si="${si}" data-k="weight" />
+            <input inputmode="numeric" placeholder="reps" value="${esc(s?.reps ?? "")}" data-sid="${esc(sess.id)}" data-ex="${esc(exId)}" data-si="${si}" data-k="reps" />
+            <input inputmode="decimal" placeholder="RPE" value="${esc(s?.rpe ?? "")}" data-sid="${esc(sess.id)}" data-ex="${esc(exId)}" data-si="${si}" data-k="rpe" />
+            <input type="checkbox" ${s?.completed ? "checked" : ""} data-sid="${esc(sess.id)}" data-ex="${esc(exId)}" data-si="${si}" data-k="completed" />
           `;
-          setsWrap.appendChild(row);
+          setsWrap.appendChild(er);
         });
 
         exBlock.appendChild(setsWrap);
@@ -573,18 +612,53 @@ function renderHistory(){
 
     details.appendChild(body);
     historyList.appendChild(details);
+
+    // If editing, wire inputs for this details block
+    if(isEditing){
+      details.querySelectorAll("input").forEach(inp => {
+        inp.oninput = () => applyHistoryEdit(inp);
+        inp.onchange = () => applyHistoryEdit(inp);
+        inp.onkeydown = (e) => { if(e.key === "Enter"){ inp.blur(); } };
+      });
+
+      // Keep it open while editing
+      details.open = true;
+    }
   });
 }
 
-// Try to infer key from name (works with your cycle naming)
-function guessKeyFromName(name){
-  const n = String(name || "").toLowerCase();
-  if(n.includes("upper a")) return "UA";
-  if(n.includes("lower a")) return "LA";
-  if(n.includes("upper b")) return "UB";
-  if(n.includes("upper c")) return "UC";
-  if(n.includes("lower b")) return "LB";
-  return "UA";
+function buildSetLine(s){
+  const w = (s?.weight ?? "").toString().trim();
+  const r = (s?.reps ?? "").toString().trim();
+  const rpe = (s?.rpe ?? "").toString().trim();
+  const pieces = [];
+  if(w) pieces.push(`${w}kg`);
+  if(r) pieces.push(`${r} reps`);
+  if(rpe) pieces.push(`RPE ${rpe}`);
+  pieces.push(s?.completed ? "Done" : "Not done");
+  return pieces.join(" • ");
+}
+
+function applyHistoryEdit(inp){
+  const sid = inp.dataset.sid;
+  const exId = inp.dataset.ex;
+  const si = Number(inp.dataset.si);
+  const k = inp.dataset.k;
+
+  const idx = st.history.findIndex(x => x.id === sid);
+  if(idx === -1) return;
+
+  const sess = st.history[idx];
+  if(!sess.sets || !sess.sets[exId] || !sess.sets[exId][si]) return;
+
+  if(k === "completed"){
+    sess.sets[exId][si].completed = !!inp.checked;
+  } else {
+    sess.sets[exId][si][k] = inp.value;
+  }
+
+  // live-save draft
+  save(st);
 }
 
 exportBtn.onclick = () => {
@@ -600,7 +674,6 @@ function renderSettings(){
   benchR.value = st.settings.benchR;
   bench1rmEl.textContent = `Bench 1RM est: ${bench1rm(st.settings.benchW, st.settings.benchR).toFixed(1)} kg`;
 }
-
 saveSettingsBtn.onclick = () => {
   const w = normalizeNum(benchW.value);
   const r = normalizeInt(benchR.value);
