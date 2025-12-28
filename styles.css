@@ -1,3 +1,128 @@
+:root{
+  --bg:#0B0D10;
+  --card:#12161C;
+  --stroke:#202734;
+  --text:#E8EEF8;
+  --muted:#A7B2C3;
+  --accent:#6EE7B7;
+  --r:18px;
+  --pad:16px;
+  --safe-top: env(safe-area-inset-top);
+  --safe-bottom: env(safe-area-inset-bottom);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:-apple-system,system-ui,Segoe UI,Roboto;
+}
+
+.top{
+  padding:calc(var(--pad) + var(--safe-top)) var(--pad) 10px;
+}
+.title{font-size:22px;font-weight:650}
+.sub{font-size:13px;color:var(--muted);margin-top:4px}
+
+.tabs{
+  display:flex;
+  gap:8px;
+  margin-top:10px;
+}
+.tab{
+  flex:1;
+  padding:10px;
+  border-radius:14px;
+  border:0;
+  background:#0F1318;
+  color:var(--muted);
+}
+.tab.active{
+  background:#18202B;
+  color:var(--text);
+}
+
+.wrap{
+  padding:0 var(--pad) calc(24px + var(--safe-bottom));
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+
+.card{
+  background:var(--card);
+  border-radius:var(--r);
+  padding:14px;
+  border:1px solid var(--stroke);
+}
+
+.h{font-weight:650}
+.s{font-size:13px;color:var(--muted)}
+
+.row{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.row.tight{gap:8px}
+
+.divider{height:1px;background:var(--stroke);margin:12px 0}
+
+.btn{
+  background:var(--accent);
+  border:0;
+  border-radius:14px;
+  padding:10px 14px;
+  font-weight:650;
+}
+.btn.ghost{
+  background:transparent;
+  color:var(--text);
+  border:1px solid var(--stroke);
+}
+
+.list{display:flex;flex-direction:column;gap:10px}
+
+.item{
+  padding:12px;
+  border-radius:14px;
+  border:1px solid var(--stroke);
+}
+
+.field span{
+  display:block;
+  font-size:12px;
+  color:var(--muted);
+  margin-bottom:4px;
+}
+.field input{
+  width:100%;
+  padding:12px;
+  border-radius:14px;
+  border:1px solid var(--stroke);
+  background:#0F1318;
+  color:var(--text);
+  font-size:16px;
+}
+
+.pill{
+  padding:6px 10px;
+  border-radius:999px;
+  border:1px solid var(--stroke);
+  font-size:12px;
+}
+.pill.subtle{color:var(--muted)}
+
+.hidden{display:none}
+
+.toast{
+  position:fixed;
+  left:16px;
+  right:16px;
+  bottom:calc(14px + var(--safe-bottom));
+  background:#0F1318;
+  border:1px solid var(--stroke);
+  padding:12px;
+  border-radius:14px;
+  font-size:13px;
+}
 /* --- History accordion --- */
 .histDetails{
   border-radius:14px;
