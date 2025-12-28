@@ -239,3 +239,66 @@ body{
 }
 .histSetRow .l{ color:var(--muted) }
 .histSetRow .r{ color:var(--text); font-weight:650 }
+/* --- History edit mode --- */
+.histBar{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  margin-top:10px;
+}
+
+.histBtn{
+  padding:8px 10px;
+  border-radius:12px;
+  border:1px solid var(--stroke);
+  background:#0F1318;
+  color:var(--text);
+  font-weight:650;
+  font-size:12px;
+}
+
+.histBtn.primary{
+  background:var(--accent);
+  color:#0B0D10;
+  border:0;
+}
+
+.histBtn.danger{
+  background:transparent;
+  color:var(--text);
+  border:1px solid rgba(255,255,255,0.18);
+}
+
+.histEditRow{
+  display:grid;
+  grid-template-columns: 60px 1fr 1fr 1fr 42px;
+  gap:8px;
+  align-items:center;
+  padding:8px 10px;
+  border-radius:12px;
+  border:1px solid rgba(32,39,52,0.65);
+  background:#0F1318;
+  font-size:12px;
+}
+
+.histEditRow .lbl{ color:var(--muted); }
+
+.histEditRow input{
+  width:100%;
+  padding:10px 10px;
+  border-radius:12px;
+  border:1px solid var(--stroke);
+  background:#0B0D10;
+  color:var(--text);
+  font-size:16px; /* prevents iOS zoom */
+}
+
+.histEditRow input[type="checkbox"]{
+  width:18px;
+  height:18px;
+  padding:0;
+  border-radius:6px;
+}
+
+
