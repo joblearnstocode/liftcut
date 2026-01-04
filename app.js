@@ -1,16 +1,13 @@
 /* LiftCut — app.js (FULL, REPLACEABLE)
-   Upgrade implemented (per your “go ahead”):
-   - Set completion + rest timer starts ONLY on an explicit commit action:
-     - pressing Done/Enter while in the REPS field, OR
-     - leaving the REPS field (blur)
-   - While typing (oninput), we ONLY store text; we do NOT complete sets and do NOT start the timer.
-   - Weight blur only formats weight; it does NOT complete a set.
-
-   Other current features retained:
-   - No RPE anywhere
+   Fix included:
+   - Prevent “Next exercise” prompt from firing twice for the same exercise (the skip bug)
+   - Works even if commit logic runs twice due to Safari/blur/Enter behaviors
+   Current features retained:
+   - No RPE
    - Suggested kg weights for ALL exercises derived from Bench 1RM estimate
    - Editable history + safe deletion
    - Self-healing storage + fail-safe History tab
+   - Set completion + rest timer starts ONLY on reps commit (Enter/Done or reps blur)
 */
 
 const LS_KEY = "liftcut_state_v5_history_accordion";
@@ -76,7 +73,6 @@ function defaultState() {
       benchW: 50,
       benchR: 12,
       mult: {
-        // original anchors
         squatMult: 0.85,
         deadliftMult: 0.95,
         rdlMult: 0.75,
@@ -84,17 +80,16 @@ function defaultState() {
         ohpMult: 0.45,
         rowMult: 0.70,
 
-        // accessory/machine heuristics
         latpdMult: 0.55,
         tpdMult: 0.45,
-        hcMult: 0.22,       // per hand
+        hcMult: 0.22,
         lpMult: 1.35,
-        lungeMult: 0.20,    // per hand
+        lungeMult: 0.20,
         calfMult: 0.95,
 
-        incdbMult: 0.22,    // per hand
+        incdbMult: 0.22,
         flyMult: 0.35,
-        latraiseMult: 0.10, // per hand
+        latraiseMult: 0.10,
         tohMult: 0.40,
         facepullMult: 0.35,
 
@@ -102,9 +97,9 @@ function defaultState() {
         csrowMult: 0.60,
         latrowMult: 0.45,
         reardeltMult: 0.22,
-        curlMult: 0.18,     // per hand
+        curlMult: 0.18,
 
-        bulgMult: 0.18,     // per hand
+        bulgMult: 0.18,
         legcurlMult: 0.55,
         legextMult: 0.45,
         calf2Mult: 0.85,
@@ -122,6 +117,9 @@ let st = load();
 // History editing
 let editingSessionId = null;
 const editSnapshot = new Map();
+
+// Guard to prevent double “next exercise” prompt
+let promptedExerciseIds = new Set();
 
 // UI refs
 const subhead = el("subhead");
@@ -223,25 +221,13 @@ function toast(msg) {
 
 /* ---------------- Helpers ---------------- */
 function bench1rmCalc(w, r) { return w * (1 + r / 30); }
-
-function baseWorkWeight() {
-  const b1 = bench1rmCalc(st.settings.benchW, st.settings.benchR);
-  return b1 * 0.60;
-}
-
+function baseWorkWeight() { return bench1rmCalc(st.settings.benchW, st.settings.benchR) * 0.60; }
 function plannedWeight(exercise) {
   const base = baseWorkWeight();
-
   if (exercise.scale.type === "benchBase") return base;
-
-  if (exercise.scale.type === "benchMult") {
-    const m = st.settings.mult[exercise.scale.mult] ?? 1;
-    return base * m;
-  }
-
+  if (exercise.scale.type === "benchMult") return base * (st.settings.mult[exercise.scale.mult] ?? 1);
   return base * 0.40;
 }
-
 function fmtKg(x) { return x == null || !isFinite(x) ? "—" : Number(x).toFixed(1); }
 function fmtMin(sec) { return `${Math.round(sec / 60)}m`; }
 function fmtClock(sec) {
@@ -271,7 +257,7 @@ function normalizeInt(v) {
 }
 function msDays(days) { return days * 24 * 60 * 60 * 1000; }
 
-/* ---------------- Timer (foreground) ---------------- */
+/* ---------------- Timer ---------------- */
 function remainingSeconds() {
   if (!st.timer?.running) return 0;
   const diff = st.timer.endAt - Date.now();
@@ -290,9 +276,7 @@ function ensureTimer() {
         st.timer.lastShownDone = true;
         save(st);
         toast("Rest complete");
-      } else {
-        save(st);
-      }
+      } else save(st);
       renderRestPill();
     } else {
       st.timer.lastShownDone = false;
@@ -328,6 +312,7 @@ function ensureActive() {
     startedAt: Date.now(),
     sets: {},
   };
+  promptedExerciseIds = new Set(); // reset guard for new workout
   save(st);
 }
 
@@ -337,7 +322,7 @@ startBtn.onclick = () => {
   setActiveTab("workout");
 };
 
-/* ---------------- Today render ---------------- */
+/* ---------------- Today ---------------- */
 function render() {
   const next = Program.cycle[st.progression.nextIndex % Program.cycle.length];
   const b1 = bench1rmCalc(st.settings.benchW, st.settings.benchR);
@@ -452,14 +437,7 @@ function promptAfterExerciseComplete(idx) {
   else { renderWorkout(); setActiveTab("workout"); }
 }
 
-/* ---------------- KEY UPGRADE: Commit behavior ----------------
-   - We keep free typing in both fields
-   - Only the REPS field commit (Enter/Done or blur) triggers:
-       - numeric normalization
-       - set completion
-       - rest timer start
-   - Weight blur only formats weight; does not complete the set
----------------------------------------------------------------- */
+/* ---------------- Sets UI + commit logic ---------------- */
 function renderSets(exercise) {
   setsEl.innerHTML = "";
   const arr = st.active.sets[exercise.id];
@@ -478,10 +456,8 @@ function renderSets(exercise) {
     setsEl.appendChild(row);
   });
 
-  const inputs = [...setsEl.querySelectorAll("input")];
-
-  // While typing: store raw text only (NO completion logic)
-  inputs.forEach((inp) => {
+  // While typing: store raw text only
+  [...setsEl.querySelectorAll("input")].forEach((inp) => {
     inp.oninput = () => {
       const i = Number(inp.dataset.i);
       const k = inp.dataset.k;
@@ -490,7 +466,7 @@ function renderSets(exercise) {
     };
   });
 
-  // Weight blur: format weight ONLY
+  // Weight blur: format weight only
   setsEl.querySelectorAll("input.wIn").forEach((inp) => {
     inp.onblur = () => {
       const i = Number(inp.dataset.i);
@@ -498,11 +474,9 @@ function renderSets(exercise) {
       const wN = normalizeNum(s.weight);
       s.weight = wN == null ? "" : fmtKg(wN);
       save(st);
-      // do NOT mark completed here
       renderSets(exercise);
     };
     inp.onkeydown = (e) => {
-      // move to reps on Enter if desktop keyboards
       if (e.key === "Enter") {
         const i = Number(inp.dataset.i);
         const repsInp = setsEl.querySelector(`input.rIn[data-i="${i}"]`);
@@ -511,20 +485,22 @@ function renderSets(exercise) {
     };
   });
 
-  // Reps commit: blur OR Enter triggers completion + timer
   function commitSet(i) {
     const s = st.active.sets[exercise.id][i];
 
-    // normalize reps
     const repsN = normalizeInt(s.reps);
     s.reps = repsN == null ? "" : String(repsN);
 
-    // normalize weight (in case it wasn't blurred yet)
     const wN = normalizeNum(s.weight);
     s.weight = wN == null ? "" : fmtKg(wN);
 
     const was = !!s.completed;
     s.completed = computeCompleted(s);
+
+    // If exercise becomes incomplete (editing), allow future prompt again
+    if (!isExerciseComplete(exercise)) {
+      promptedExerciseIds.delete(exercise.id);
+    }
 
     save(st);
     renderWorkout();
@@ -534,25 +510,22 @@ function renderSets(exercise) {
       toast(`Set ${s.setIndex} complete`);
     }
 
-    // refresh UI to update blinker + formatting
     renderSets(exercise);
 
-    if (currentExercise && isExerciseComplete(exercise)) {
+    // IMPORTANT FIX: prompt only once per exercise completion
+    if (currentExercise && isExerciseComplete(exercise) && !promptedExerciseIds.has(exercise.id)) {
+      promptedExerciseIds.add(exercise.id);
       promptAfterExerciseComplete(currentExercise.index);
     }
   }
 
+  // Reps commit: blur OR Enter triggers commit
   setsEl.querySelectorAll("input.rIn").forEach((inp) => {
-    inp.onblur = () => {
-      const i = Number(inp.dataset.i);
-      commitSet(i);
-    };
+    inp.onblur = () => { commitSet(Number(inp.dataset.i)); };
     inp.onkeydown = (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
-        const i = Number(inp.dataset.i);
-        // Explicit commit on Enter/Done
-        inp.blur(); // triggers commitSet via blur
+        inp.blur(); // triggers commit via blur
       }
     };
   });
@@ -580,6 +553,7 @@ finishBtn.onclick = () => {
   st.progression.completedSessions += 1;
   st.progression.nextIndex = (st.progression.nextIndex + 1) % Program.cycle.length;
   st.timer = { running: false, endAt: 0, lastShownDone: false, label: "" };
+  promptedExerciseIds = new Set();
 
   save(st);
   render();
@@ -588,7 +562,7 @@ finishBtn.onclick = () => {
   toast("Workout saved");
 };
 
-/* ---------------- History: edit + safe delete ---------------- */
+/* ---------------- History ---------------- */
 function guessKeyFromName(name) {
   const n = String(name || "").toLowerCase();
   if (n.includes("upper a")) return "UA";
@@ -598,17 +572,14 @@ function guessKeyFromName(name) {
   if (n.includes("lower b")) return "LB";
   return "UA";
 }
-
 function getExerciseNameById(sessionKey, exId) {
   const arr = Program.template[sessionKey] || [];
   const found = arr.find((x) => x.id === exId);
   return found ? found.name : exId;
 }
-
 function countCompletedSets(setsArr) {
   return (setsArr || []).filter((s) => s && s.completed).length;
 }
-
 function buildSetLine(s) {
   const w = (s?.weight ?? "").toString().trim();
   const r = (s?.reps ?? "").toString().trim();
@@ -618,7 +589,6 @@ function buildSetLine(s) {
   pieces.push(s?.completed ? "Done" : "Not done");
   return pieces.join(" • ");
 }
-
 function applyHistoryEdit(inp) {
   const sid = inp.dataset.sid;
   const exId = inp.dataset.ex;
@@ -631,14 +601,11 @@ function applyHistoryEdit(inp) {
   const sess = st.history[idx];
   if (!sess.sets || !sess.sets[exId] || !sess.sets[exId][si]) return;
 
-  if (k === "completed") {
-    sess.sets[exId][si].completed = !!inp.checked;
-  } else {
-    sess.sets[exId][si][k] = inp.value;
-  }
+  if (k === "completed") sess.sets[exId][si].completed = !!inp.checked;
+  else sess.sets[exId][si][k] = inp.value;
+
   save(st);
 }
-
 function deleteSingleSession(sessionId) {
   const idx = st.history.findIndex((x) => x.id === sessionId);
   if (idx === -1) return;
@@ -658,12 +625,8 @@ function deleteSingleSession(sessionId) {
   renderHistory();
   toast("Session deleted");
 }
-
 function deleteHistoryByRange(mode) {
-  if (!st.history?.length) {
-    toast("No history to delete");
-    return;
-  }
+  if (!st.history?.length) { toast("No history to delete"); return; }
 
   if (mode === "all") {
     const ok = confirm("Delete ALL history? This cannot be undone.");
@@ -712,7 +675,6 @@ function deleteHistoryByRange(mode) {
   renderHistory();
   toast("History deleted");
 }
-
 function renderHistory() {
   exportOut.classList.add("hidden");
   historyList.innerHTML = "";
@@ -928,7 +890,6 @@ function renderSettings() {
   benchR.value = st.settings.benchR;
   bench1rmEl.textContent = `Bench 1RM est: ${bench1rmCalc(st.settings.benchW, st.settings.benchR).toFixed(1)} kg`;
 }
-
 saveSettingsBtn.onclick = () => {
   const w = normalizeNum(benchW.value);
   const r = normalizeInt(benchR.value);
@@ -985,7 +946,6 @@ function load() {
     return defaultState();
   }
 }
-
 function save(s) { localStorage.setItem(LS_KEY, JSON.stringify(s)); }
 
 function el(id) {
