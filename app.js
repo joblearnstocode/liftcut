@@ -1,10 +1,16 @@
 /* LiftCut — app.js (FULL, REPLACEABLE)
-   Changes included:
-   1) RPE removed everywhere (no input, no display, no edit)
-   2) ALL exercises now show suggested weight (kg-based) derived from Bench 1RM estimate
-   3) Self-healing storage + fail-safe History tab (prevents “History not clickable” in normal tabs)
+   Upgrade implemented (per your “go ahead”):
+   - Set completion + rest timer starts ONLY on an explicit commit action:
+     - pressing Done/Enter while in the REPS field, OR
+     - leaving the REPS field (blur)
+   - While typing (oninput), we ONLY store text; we do NOT complete sets and do NOT start the timer.
+   - Weight blur only formats weight; it does NOT complete a set.
 
-   Storage key kept so existing logs remain.
+   Other current features retained:
+   - No RPE anywhere
+   - Suggested kg weights for ALL exercises derived from Bench 1RM estimate
+   - Editable history + safe deletion
+   - Self-healing storage + fail-safe History tab
 */
 
 const LS_KEY = "liftcut_state_v5_history_accordion";
@@ -69,12 +75,8 @@ function defaultState() {
     settings: {
       benchW: 50,
       benchR: 12,
-
-      // Multipliers applied to "base work weight" = Bench1RM * 0.60
-      // These are heuristic starting points (consistent + safe).
-      // You can tune these later in Settings if you want.
       mult: {
-        // originally present
+        // original anchors
         squatMult: 0.85,
         deadliftMult: 0.95,
         rdlMult: 0.75,
@@ -82,17 +84,17 @@ function defaultState() {
         ohpMult: 0.45,
         rowMult: 0.70,
 
-        // NEW: weights for previously “RPE-based” and accessory/machine lifts
+        // accessory/machine heuristics
         latpdMult: 0.55,
         tpdMult: 0.45,
-        hcMult: 0.22,         // per hand
+        hcMult: 0.22,       // per hand
         lpMult: 1.35,
-        lungeMult: 0.20,      // per hand
+        lungeMult: 0.20,    // per hand
         calfMult: 0.95,
 
-        incdbMult: 0.22,      // per hand
+        incdbMult: 0.22,    // per hand
         flyMult: 0.35,
-        latraiseMult: 0.10,   // per hand
+        latraiseMult: 0.10, // per hand
         tohMult: 0.40,
         facepullMult: 0.35,
 
@@ -100,9 +102,9 @@ function defaultState() {
         csrowMult: 0.60,
         latrowMult: 0.45,
         reardeltMult: 0.22,
-        curlMult: 0.18,       // per hand
+        curlMult: 0.18,     // per hand
 
-        bulgMult: 0.18,       // per hand
+        bulgMult: 0.18,     // per hand
         legcurlMult: 0.55,
         legextMult: 0.45,
         calf2Mult: 0.85,
@@ -117,7 +119,7 @@ function defaultState() {
 
 let st = load();
 
-// History editing state
+// History editing
 let editingSessionId = null;
 const editSnapshot = new Map();
 
@@ -173,49 +175,25 @@ function setActiveTab(which) {
   [tabToday, tabWorkout, tabHistory, tabSettings].forEach((t) => t.classList.remove("active"));
   [paneToday, paneWorkout, paneDetail, paneHistory, paneSettings].forEach((p) => p.classList.add("hidden"));
 
-  if (which === "today") {
-    tabToday.classList.add("active");
-    paneToday.classList.remove("hidden");
-  }
-  if (which === "workout") {
-    tabWorkout.classList.add("active");
-    paneWorkout.classList.remove("hidden");
-  }
-  if (which === "detail") {
-    tabWorkout.classList.add("active");
-    paneDetail.classList.remove("hidden");
-  }
-  if (which === "history") {
-    tabHistory.classList.add("active");
-    paneHistory.classList.remove("hidden");
-  }
-  if (which === "settings") {
-    tabSettings.classList.add("active");
-    paneSettings.classList.remove("hidden");
-  }
+  if (which === "today") { tabToday.classList.add("active"); paneToday.classList.remove("hidden"); }
+  if (which === "workout") { tabWorkout.classList.add("active"); paneWorkout.classList.remove("hidden"); }
+  if (which === "detail") { tabWorkout.classList.add("active"); paneDetail.classList.remove("hidden"); }
+  if (which === "history") { tabHistory.classList.add("active"); paneHistory.classList.remove("hidden"); }
+  if (which === "settings") { tabSettings.classList.add("active"); paneSettings.classList.remove("hidden"); }
 }
 
-tabToday.onclick = () => {
-  render();
-  setActiveTab("today");
-};
+tabToday.onclick = () => { render(); setActiveTab("today"); };
 
 tabWorkout.onclick = () => {
-  if (st.active) {
-    renderWorkout();
-    setActiveTab("workout");
-  } else {
-    setActiveTab("today");
-  }
+  if (st.active) { renderWorkout(); setActiveTab("workout"); }
+  else { setActiveTab("today"); }
 };
 
-// Fail-safe: History should never “die”
 tabHistory.onclick = () => {
   try {
     renderHistory();
     setActiveTab("history");
   } catch (e) {
-    // Preserve settings; reset broken history only
     st.history = [];
     save(st);
     try {
@@ -223,7 +201,6 @@ tabHistory.onclick = () => {
       setActiveTab("history");
       toast("History reset (old data incompatible)");
     } catch (_) {
-      // If even that fails, full reset
       localStorage.removeItem(LS_KEY);
       st = defaultState();
       save(st);
@@ -235,10 +212,7 @@ tabHistory.onclick = () => {
   }
 };
 
-tabSettings.onclick = () => {
-  renderSettings();
-  setActiveTab("settings");
-};
+tabSettings.onclick = () => { renderSettings(); setActiveTab("settings"); };
 
 function toast(msg) {
   if (toastTimer) clearTimeout(toastTimer);
@@ -248,11 +222,8 @@ function toast(msg) {
 }
 
 /* ---------------- Helpers ---------------- */
-function bench1rmCalc(w, r) {
-  return w * (1 + r / 30);
-}
+function bench1rmCalc(w, r) { return w * (1 + r / 30); }
 
-// Base work weight anchored to bench 1RM (simple, consistent heuristic)
 function baseWorkWeight() {
   const b1 = bench1rmCalc(st.settings.benchW, st.settings.benchR);
   return b1 * 0.60;
@@ -265,61 +236,40 @@ function plannedWeight(exercise) {
 
   if (exercise.scale.type === "benchMult") {
     const m = st.settings.mult[exercise.scale.mult] ?? 1;
-    let w = base * m;
-
-    // For per-hand dumbbell suggestions, return per-hand number
-    if (exercise.scale.perHand) w = w;
-    return w;
+    return base * m;
   }
 
-  // Should not occur now, but keep safe fallback:
   return base * 0.40;
 }
 
-function fmtKg(x) {
-  return x == null || !isFinite(x) ? "—" : Number(x).toFixed(1);
-}
-
-function fmtMin(sec) {
-  return `${Math.round(sec / 60)}m`;
-}
-
+function fmtKg(x) { return x == null || !isFinite(x) ? "—" : Number(x).toFixed(1); }
+function fmtMin(sec) { return `${Math.round(sec / 60)}m`; }
 function fmtClock(sec) {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return `${m}:${String(s).padStart(2, "0")}`;
 }
-
 function fmtDate(ts) {
   const d = new Date(ts);
   const day = d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
   const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
   return `${day} • ${time}`;
 }
-
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (ch) =>
     ch === "&" ? "&amp;" : ch === "<" ? "&lt;" : ch === ">" ? "&gt;" : ch === `"` ? "&quot;" : "&#39;"
   );
 }
-
-function deepCopy(obj) {
-  return JSON.parse(JSON.stringify(obj));
-}
-
+function deepCopy(obj) { return JSON.parse(JSON.stringify(obj)); }
 function normalizeNum(v) {
   const n = parseFloat(String(v).replace(",", "."));
   return isFinite(n) ? n : null;
 }
-
 function normalizeInt(v) {
   const n = parseInt(String(v), 10);
   return isFinite(n) ? n : null;
 }
-
-function msDays(days) {
-  return days * 24 * 60 * 60 * 1000;
-}
+function msDays(days) { return days * 24 * 60 * 60 * 1000; }
 
 /* ---------------- Timer (foreground) ---------------- */
 function remainingSeconds() {
@@ -327,7 +277,6 @@ function remainingSeconds() {
   const diff = st.timer.endAt - Date.now();
   return Math.max(0, Math.ceil(diff / 1000));
 }
-
 function ensureTimer() {
   if (timerInterval) return;
   timerInterval = setInterval(() => {
@@ -351,7 +300,6 @@ function ensureTimer() {
     }
   }, 500);
 }
-
 function startRest(seconds, label) {
   ensureTimer();
   const secs = Math.max(0, Math.round(seconds));
@@ -362,15 +310,10 @@ function startRest(seconds, label) {
   save(st);
   renderRestPill();
 }
-
 function renderRestPill() {
-  if (!currentExercise) {
-    restPill.textContent = "Rest —";
-    return;
-  }
+  if (!currentExercise) { restPill.textContent = "Rest —"; return; }
   const base = `Rest ${fmtMin(currentExercise.ex.rest)}`;
-  if (st.timer?.running) restPill.textContent = `${base} • ${fmtClock(remainingSeconds())}`;
-  else restPill.textContent = base;
+  restPill.textContent = st.timer?.running ? `${base} • ${fmtClock(remainingSeconds())}` : base;
 }
 
 /* ---------------- Session ---------------- */
@@ -506,12 +449,17 @@ function promptAfterExerciseComplete(idx) {
   const nextName = exs[nextIdx].name;
   const ok = confirm(`Exercise complete.\n\nNext: ${nextName}\n\nOK = Next, Cancel = Workout list.`);
   if (ok) openDetail(exs[nextIdx], nextIdx);
-  else {
-    renderWorkout();
-    setActiveTab("workout");
-  }
+  else { renderWorkout(); setActiveTab("workout"); }
 }
 
+/* ---------------- KEY UPGRADE: Commit behavior ----------------
+   - We keep free typing in both fields
+   - Only the REPS field commit (Enter/Done or blur) triggers:
+       - numeric normalization
+       - set completion
+       - rest timer start
+   - Weight blur only formats weight; does not complete the set
+---------------------------------------------------------------- */
 function renderSets(exercise) {
   setsEl.innerHTML = "";
   const arr = st.active.sets[exercise.id];
@@ -524,67 +472,95 @@ function renderSets(exercise) {
         <div>Set ${s.setIndex}</div>
         <div class="doneDot ${s.completed ? "on" : ""}"></div>
       </div>
-      <input inputmode="decimal" placeholder="Weight (kg)" value="${esc(s.weight || "")}" data-i="${idx}" data-k="weight" />
-      <input inputmode="numeric" placeholder="Reps" value="${esc(s.reps || "")}" data-i="${idx}" data-k="reps" />
+      <input class="wIn" inputmode="decimal" placeholder="Weight (kg)" value="${esc(s.weight || "")}" data-i="${idx}" data-k="weight" />
+      <input class="rIn" inputmode="numeric" placeholder="Reps" value="${esc(s.reps || "")}" data-i="${idx}" data-k="reps" />
     `;
     setsEl.appendChild(row);
   });
 
-  setsEl.querySelectorAll("input").forEach((inp) => {
+  const inputs = [...setsEl.querySelectorAll("input")];
+
+  // While typing: store raw text only (NO completion logic)
+  inputs.forEach((inp) => {
     inp.oninput = () => {
       const i = Number(inp.dataset.i);
       const k = inp.dataset.k;
       st.active.sets[exercise.id][i][k] = inp.value;
       save(st);
     };
+  });
 
-    const commit = () => {
+  // Weight blur: format weight ONLY
+  setsEl.querySelectorAll("input.wIn").forEach((inp) => {
+    inp.onblur = () => {
       const i = Number(inp.dataset.i);
       const s = st.active.sets[exercise.id][i];
-
-      const repsN = normalizeInt(s.reps);
-      s.reps = repsN == null ? "" : String(repsN);
-
       const wN = normalizeNum(s.weight);
       s.weight = wN == null ? "" : fmtKg(wN);
-
-      const was = s.completed;
-      s.completed = computeCompleted(s);
-
       save(st);
-      renderWorkout();
-
-      if (!was && s.completed) {
-        startRest(exercise.rest, exercise.name);
-        renderSets(exercise);
-        toast(`Set ${s.setIndex} complete`);
-      }
-
-      if (currentExercise && isExerciseComplete(exercise)) {
-        promptAfterExerciseComplete(currentExercise.index);
+      // do NOT mark completed here
+      renderSets(exercise);
+    };
+    inp.onkeydown = (e) => {
+      // move to reps on Enter if desktop keyboards
+      if (e.key === "Enter") {
+        const i = Number(inp.dataset.i);
+        const repsInp = setsEl.querySelector(`input.rIn[data-i="${i}"]`);
+        if (repsInp) repsInp.focus();
       }
     };
+  });
 
-    inp.onblur = commit;
-    inp.onchange = commit;
+  // Reps commit: blur OR Enter triggers completion + timer
+  function commitSet(i) {
+    const s = st.active.sets[exercise.id][i];
+
+    // normalize reps
+    const repsN = normalizeInt(s.reps);
+    s.reps = repsN == null ? "" : String(repsN);
+
+    // normalize weight (in case it wasn't blurred yet)
+    const wN = normalizeNum(s.weight);
+    s.weight = wN == null ? "" : fmtKg(wN);
+
+    const was = !!s.completed;
+    s.completed = computeCompleted(s);
+
+    save(st);
+    renderWorkout();
+
+    if (!was && s.completed) {
+      startRest(exercise.rest, exercise.name);
+      toast(`Set ${s.setIndex} complete`);
+    }
+
+    // refresh UI to update blinker + formatting
+    renderSets(exercise);
+
+    if (currentExercise && isExerciseComplete(exercise)) {
+      promptAfterExerciseComplete(currentExercise.index);
+    }
+  }
+
+  setsEl.querySelectorAll("input.rIn").forEach((inp) => {
+    inp.onblur = () => {
+      const i = Number(inp.dataset.i);
+      commitSet(i);
+    };
     inp.onkeydown = (e) => {
-      if (e.key === "Enter") inp.blur();
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const i = Number(inp.dataset.i);
+        // Explicit commit on Enter/Done
+        inp.blur(); // triggers commitSet via blur
+      }
     };
   });
 }
 
-backBtn.onclick = () => {
-  renderWorkout();
-  setActiveTab("workout");
-};
-doneBtn.onclick = () => {
-  renderWorkout();
-  setActiveTab("workout");
-};
-saveAllBtn.onclick = () => {
-  save(st);
-  toast("Saved");
-};
+backBtn.onclick = () => { renderWorkout(); setActiveTab("workout"); };
+doneBtn.onclick = () => { renderWorkout(); setActiveTab("workout"); };
+saveAllBtn.onclick = () => { save(st); toast("Saved"); };
 
 /* ---------------- Finish workout ---------------- */
 finishBtn.onclick = () => {
@@ -741,7 +717,6 @@ function renderHistory() {
   exportOut.classList.add("hidden");
   historyList.innerHTML = "";
 
-  // Global manage card
   const global = document.createElement("div");
   global.className = "card";
   global.innerHTML = `
@@ -936,9 +911,7 @@ function renderHistory() {
       details.querySelectorAll("input").forEach((inp) => {
         inp.oninput = () => applyHistoryEdit(inp);
         inp.onchange = () => applyHistoryEdit(inp);
-        inp.onkeydown = (e) => {
-          if (e.key === "Enter") inp.blur();
-        };
+        inp.onkeydown = (e) => { if (e.key === "Enter") inp.blur(); };
       });
     }
   });
@@ -959,10 +932,7 @@ function renderSettings() {
 saveSettingsBtn.onclick = () => {
   const w = normalizeNum(benchW.value);
   const r = normalizeInt(benchR.value);
-  if (w == null || w <= 0 || r == null || r <= 0) {
-    toast("Enter valid bench");
-    return;
-  }
+  if (w == null || w <= 0 || r == null || r <= 0) { toast("Enter valid bench"); return; }
   st.settings.benchW = w;
   st.settings.benchR = r;
   save(st);
@@ -971,7 +941,7 @@ saveSettingsBtn.onclick = () => {
   toast("Saved");
 };
 
-/* ---------------- Storage (SELF-HEALING) ---------------- */
+/* ---------------- Storage (self-healing) ---------------- */
 function load() {
   try {
     const raw = localStorage.getItem(LS_KEY);
@@ -981,10 +951,8 @@ function load() {
     const ok =
       parsed &&
       typeof parsed === "object" &&
-      parsed.settings &&
-      typeof parsed.settings === "object" &&
-      parsed.progression &&
-      typeof parsed.progression === "object" &&
+      parsed.settings && typeof parsed.settings === "object" &&
+      parsed.progression && typeof parsed.progression === "object" &&
       Array.isArray(parsed.history);
 
     if (!ok) {
@@ -992,11 +960,9 @@ function load() {
       return defaultState();
     }
 
-    // Normalize missing parts (old versions)
     const def = defaultState();
-    if (!parsed.settings.mult) parsed.settings.mult = def.settings.mult;
 
-    // Merge multipliers: keep user’s current values, fill new ones
+    if (!parsed.settings.mult) parsed.settings.mult = def.settings.mult;
     parsed.settings.mult = { ...def.settings.mult, ...parsed.settings.mult };
 
     if (typeof parsed.settings.benchW !== "number") parsed.settings.benchW = def.settings.benchW;
@@ -1011,8 +977,6 @@ function load() {
     if (typeof parsed.timer.lastShownDone !== "boolean") parsed.timer.lastShownDone = false;
     if (typeof parsed.timer.label !== "string") parsed.timer.label = "";
 
-    // RPE compatibility: remove any stray rpe fields from active/history sets is not required,
-    // but rendering ignores them anyway.
     parsed.history = parsed.history.filter((s) => s && typeof s === "object" && s.sets && typeof s.sets === "object");
 
     return parsed;
@@ -1022,9 +986,7 @@ function load() {
   }
 }
 
-function save(s) {
-  localStorage.setItem(LS_KEY, JSON.stringify(s));
-}
+function save(s) { localStorage.setItem(LS_KEY, JSON.stringify(s)); }
 
 function el(id) {
   const node = document.getElementById(id);
