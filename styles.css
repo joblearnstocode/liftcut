@@ -442,3 +442,72 @@ body{
 }
 
 .hidden{ display:none; }
+/* ---------- Bottom Sheet (Exercise Complete) ---------- */
+.sheetOverlay{
+  position:fixed;
+  inset:0;
+  background: rgba(0,0,0,0.45);
+  backdrop-filter: blur(6px);
+  display:flex;
+  align-items:flex-end;
+  justify-content:center;
+  padding: 16px;
+  padding-bottom: calc(16px + var(--safe-bottom));
+  z-index: 9999;
+}
+
+.sheetOverlay.hidden{ display:none; }
+
+.sheetPanel{
+  width:100%;
+  max-width: 520px;
+  border-radius: 22px;
+  background: rgba(18,22,28,0.92);
+  border: 1px solid rgba(255,255,255,0.10);
+  box-shadow: 0 18px 50px rgba(0,0,0,0.45);
+  overflow:hidden;
+  transform: translateY(8px);
+  animation: sheetIn .12s ease-out forwards;
+}
+
+@keyframes sheetIn{
+  from { transform: translateY(14px); opacity: 0.92; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+.sheetHandle{
+  width: 46px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.18);
+  margin: 10px auto 6px;
+}
+
+.sheetBody{
+  padding: 10px 14px 14px;
+}
+
+.sheetTitle{
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.sheetSub{
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.sheetActions{
+  display:flex;
+  gap:10px;
+  margin-top: 12px;
+}
+
+.sheetActions .btn{
+  flex:1;
+}
+
+
