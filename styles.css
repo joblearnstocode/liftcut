@@ -1,179 +1,319 @@
-/* BUILD: liftcut-stable-history */
-
-/* ---------- Root + Reset ---------- */
 :root{
   --bg:#0B0D10;
-  --card:#12161C;
-  --stroke:#202734;
-  --text:#E8EEF8;
+  --card:rgba(18,22,28,0.72);
+  --card2:rgba(18,22,28,0.92);
+  --stroke:rgba(255,255,255,0.08);
+  --stroke2:rgba(255,255,255,0.12);
+  --text:#EAF1FB;
   --muted:#A7B2C3;
+  --muted2:#8390A6;
   --accent:#6EE7B7;
-  --shadow: 0 0 0 1px var(--stroke);
+
   --r:18px;
+  --r2:14px;
   --pad:16px;
+
   --safe-top: env(safe-area-inset-top);
   --safe-bottom: env(safe-area-inset-bottom);
+
+  --shadow: 0 10px 30px rgba(0,0,0,0.35);
+  --shadow2: 0 6px 18px rgba(0,0,0,0.28);
 }
 
-*{ box-sizing:border-box }
-html, body{ height:100% }
+*{ box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
+
+html,body{ height:100%; }
 
 body{
   margin:0;
-  background:var(--bg);
+  background:
+    radial-gradient(900px 450px at 15% -10%, rgba(110,231,183,0.12), transparent 60%),
+    radial-gradient(700px 350px at 90% 10%, rgba(110,231,183,0.06), transparent 55%),
+    var(--bg);
   color:var(--text);
-  font-family:-apple-system, system-ui, Segoe UI, Roboto, Arial, sans-serif;
+  font-family:-apple-system,BlinkMacSystemFont,system-ui,Segoe UI,Roboto;
+  letter-spacing:0.2px;
 }
 
-/* ---------- Top / Header ---------- */
+/* ---------- Top header ---------- */
 .top{
-  padding:calc(var(--pad) + var(--safe-top)) var(--pad) 10px;
+  padding: calc(var(--pad) + var(--safe-top)) var(--pad) 10px;
 }
+
 .title{
   font-size:22px;
-  font-weight:650;
+  font-weight:700;
+  line-height:1.15;
 }
+
 .sub{
   font-size:13px;
   color:var(--muted);
-  margin-top:4px;
+  margin-top:6px;
+  line-height:1.35;
 }
 
 /* ---------- Tabs ---------- */
 .tabs{
   display:flex;
-  gap:8px;
-  margin-top:10px;
-}
-.tab{
-  flex:1;
-  padding:10px;
-  border-radius:14px;
-  border:0;
-  background:#0F1318;
-  color:var(--muted);
-  font-weight:600;
-}
-.tab.active{
-  background:#18202B;
-  color:var(--text);
+  gap:10px;
+  margin-top:12px;
 }
 
-/* ---------- Layout ---------- */
+.tab{
+  flex:1;
+  padding:10px 12px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,0.06);
+  background: rgba(15,19,24,0.55);
+  color:var(--muted);
+  font-weight:650;
+  font-size:13px;
+  backdrop-filter: blur(10px);
+}
+
+.tab.active{
+  background: rgba(24,32,43,0.72);
+  border-color: rgba(255,255,255,0.10);
+  color:var(--text);
+  box-shadow: 0 10px 24px rgba(0,0,0,0.25);
+}
+
+/* ---------- Layout wrapper ---------- */
 .wrap{
-  padding:0 var(--pad) calc(24px + var(--safe-bottom));
+  padding: 0 var(--pad) calc(26px + var(--safe-bottom));
   display:flex;
   flex-direction:column;
   gap:12px;
 }
 
-.hidden{ display:none }
-
-/* ---------- Cards & Lists ---------- */
+/* ---------- Cards ---------- */
 .card{
-  background:var(--card);
-  border-radius:var(--r);
-  padding:14px;
+  background: var(--card);
+  border-radius: var(--r);
+  padding: 14px;
   border:1px solid var(--stroke);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow2);
+  backdrop-filter: blur(12px);
 }
 
-.list{
-  display:flex;
-  flex-direction:column;
-  gap:10px;
-}
+.h{ font-weight:750; letter-spacing:0.2px; }
+.s{ font-size:13px; color:var(--muted); line-height:1.35; }
 
-.item{
-  padding:12px;
-  border-radius:14px;
-  border:1px solid var(--stroke);
-  background:rgba(255,255,255,0.02);
-}
-
-/* ---------- Typography ---------- */
-.h{ font-weight:650 }
-.s{ font-size:13px; color:var(--muted) }
-
-/* ---------- Rows ---------- */
 .row{
   display:flex;
   justify-content:space-between;
   align-items:center;
   gap:12px;
 }
-.row.tight{ gap:8px }
+
+.row.tight{ gap:8px; }
 
 .divider{
   height:1px;
-  background:var(--stroke);
+  background: rgba(255,255,255,0.07);
   margin:12px 0;
 }
 
 /* ---------- Buttons ---------- */
 .btn{
-  background:var(--accent);
+  background: var(--accent);
   border:0;
-  border-radius:14px;
-  padding:10px 14px;
-  font-weight:650;
+  border-radius: 14px;
+  padding: 11px 14px;
+  font-weight:750;
+  color:#07110D;
+  box-shadow: 0 12px 24px rgba(110,231,183,0.12);
+  transform: translateY(0);
+  transition: transform .08s ease, filter .08s ease;
 }
+
+.btn:active{ transform: translateY(1px); filter: brightness(0.96); }
+
 .btn.ghost{
-  background:transparent;
-  color:var(--text);
-  border:1px solid var(--stroke);
+  background: rgba(15,19,24,0.55);
+  color: var(--text);
+  border:1px solid rgba(255,255,255,0.10);
+  box-shadow: none;
+}
+
+/* ---------- Lists ---------- */
+.list{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+
+/* List item cards */
+.item{
+  padding: 12px 12px;
+  border-radius: 16px;
+  border:1px solid rgba(255,255,255,0.08);
+  background: rgba(15,19,24,0.45);
+  box-shadow: 0 10px 20px rgba(0,0,0,0.22);
+  backdrop-filter: blur(10px);
+  transition: transform .08s ease, border-color .12s ease;
+}
+
+.item:active{
+  transform: translateY(1px);
+  border-color: rgba(255,255,255,0.14);
+}
+
+.topline{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:10px;
+}
+
+.name{
+  font-weight:750;
+  line-height:1.2;
+}
+
+.meta{
+  margin-top:6px;
+  font-size:12px;
+  color: var(--muted);
+  line-height:1.35;
 }
 
 /* ---------- Pills ---------- */
 .pill{
   padding:6px 10px;
   border-radius:999px;
-  border:1px solid var(--stroke);
+  border:1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.05);
   font-size:12px;
+  font-weight:700;
+  color: var(--text);
+  white-space:nowrap;
 }
-.pill.subtle{ color:var(--muted) }
+.pill.subtle{
+  color:var(--muted);
+  background: rgba(255,255,255,0.03);
+}
 
-/* ---------- Inputs ---------- */
+/* ---------- Fields (Settings etc.) ---------- */
 .field span{
   display:block;
   font-size:12px;
   color:var(--muted);
-  margin-bottom:4px;
+  margin-bottom:6px;
 }
 .field input{
   width:100%;
-  padding:12px;
-  border-radius:14px;
-  border:1px solid var(--stroke);
-  background:#0F1318;
+  padding:12px 12px;
+  border-radius: 14px;
+  border:1px solid rgba(255,255,255,0.10);
+  background: rgba(15,19,24,0.55);
   color:var(--text);
-  font-size:16px; /* prevents iOS zoom */
+  font-size:16px;
+  outline:none;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
 }
 
-/* ---------- Toast ---------- */
-.toast{
-  position:fixed;
-  left:16px;
-  right:16px;
-  bottom:calc(14px + var(--safe-bottom));
-  background:#0F1318;
-  border:1px solid var(--stroke);
+.field input:focus{
+  border-color: rgba(110,231,183,0.55);
+  box-shadow: 0 0 0 3px rgba(110,231,183,0.16);
+}
+
+/* ---------- Exercise detail: sets ---------- */
+#sets{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+
+/* A “set card” style: feels app-like */
+.setrow{
+  display:grid;
+  grid-template-columns: 62px 1fr 1fr;
+  grid-template-rows: auto auto;
+  gap:10px 10px;
+
   padding:12px;
-  border-radius:14px;
-  font-size:13px;
-  z-index:10;
+  border-radius: 16px;
+  border:1px solid rgba(255,255,255,0.08);
+  background: rgba(15,19,24,0.50);
+  box-shadow: 0 10px 20px rgba(0,0,0,0.22);
+  backdrop-filter: blur(10px);
 }
 
-/* ========================================================= */
-/* ================= History Accordion ===================== */
-/* ========================================================= */
+/* Left label area */
+.setrow .label{
+  grid-column:1;
+  grid-row:1 / span 2;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  gap:6px;
+}
 
+.setrow .label div:first-child{
+  font-weight:800;
+  font-size:13px;
+  color:var(--text);
+}
+
+/* Completion dot */
+.doneDot{
+  width:10px;
+  height:10px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,0.22);
+  background: rgba(255,255,255,0.06);
+}
+.doneDot.on{
+  border-color: rgba(110,231,183,0.85);
+  background: rgba(110,231,183,0.85);
+  box-shadow: 0 0 0 3px rgba(110,231,183,0.15);
+}
+
+/* Inputs */
+.setrow input{
+  width:100%;
+  padding:12px 12px;
+  border-radius: 14px;
+  border:1px solid rgba(255,255,255,0.10);
+  background: rgba(10,12,15,0.55);
+  color: var(--text);
+  font-size:16px;
+  font-weight:700;
+  outline:none;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+.setrow input:focus{
+  border-color: rgba(110,231,183,0.55);
+  box-shadow: 0 0 0 3px rgba(110,231,183,0.16);
+}
+
+/* Make placeholders subtle */
+.setrow input::placeholder{
+  color: rgba(167,178,195,0.55);
+  font-weight:650;
+}
+
+/* Prev line: small, tucked under inputs */
+.prevMini{
+  grid-column: 2 / 4;
+  grid-row: 2;
+  margin-top:-4px;
+  font-size:12px;
+  color: var(--muted2);
+  line-height:1.25;
+}
+
+/* ---------- History accordion polish ---------- */
 .histDetails{
-  border-radius:14px;
-  background:rgba(255,255,255,0.02);
-  border:1px solid var(--stroke);
-  box-shadow: var(--shadow);
+  border-radius:16px;
+  background: rgba(15,19,24,0.45);
+  border:1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 10px 20px rgba(0,0,0,0.22);
   overflow:hidden;
+  backdrop-filter: blur(10px);
 }
 
 .histSummary{
@@ -182,7 +322,7 @@ body{
   padding:12px;
   user-select:none;
 }
-.histSummary::-webkit-details-marker{ display:none }
+.histSummary::-webkit-details-marker{ display:none; }
 
 .histHead{
   display:flex;
@@ -190,9 +330,11 @@ body{
   align-items:flex-start;
   gap:12px;
 }
+
 .histTitle{
-  font-weight:650;
+  font-weight:800;
 }
+
 .histMeta{
   color:var(--muted);
   font-size:12px;
@@ -200,126 +342,103 @@ body{
   line-height:1.35;
 }
 
-.histBody{
-  padding:0 12px 12px 12px;
-}
+.histBody{ padding: 0 12px 12px; }
 
 .histExercise{
   margin-top:10px;
   padding-top:10px;
-  border-top:1px solid rgba(32,39,52,0.55);
+  border-top: 1px solid rgba(255,255,255,0.08);
 }
-.histExercise:first-child{
-  border-top:0;
-  padding-top:0;
-}
+.histExercise:first-child{ border-top:0; padding-top:0; }
 
-.histExName{ font-weight:650 }
-.histExSub{
-  color:var(--muted);
-  font-size:12px;
-  margin-top:4px;
-}
+.histExName{ font-weight:800; }
+.histExSub{ color:var(--muted); font-size:12px; margin-top:4px; }
 
 .histSets{
   margin-top:8px;
   display:flex;
   flex-direction:column;
-  gap:6px;
+  gap:8px;
 }
+
 .histSetRow{
   display:flex;
   justify-content:space-between;
   gap:12px;
-  padding:8px 10px;
-  border-radius:12px;
-  border:1px solid rgba(32,39,52,0.65);
-  background:#0F1318;
+  padding:10px 12px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,0.08);
+  background: rgba(10,12,15,0.45);
   font-size:12px;
 }
-.histSetRow .l{ color:var(--muted) }
-.histSetRow .r{ color:var(--text); font-weight:650 }
-/* --- History edit mode --- */
+.histSetRow .l{ color:var(--muted); }
+.histSetRow .r{ color:var(--text); font-weight:800; }
+
+/* Edit bar/buttons in history */
 .histBar{
   display:flex;
-  justify-content:space-between;
   align-items:center;
   gap:10px;
-  margin-top:10px;
+  flex-wrap:wrap;
+  margin-bottom:10px;
 }
 
 .histBtn{
-  padding:8px 10px;
-  border-radius:12px;
-  border:1px solid var(--stroke);
-  background:#0F1318;
-  color:var(--text);
-  font-weight:650;
+  border:1px solid rgba(255,255,255,0.10);
+  background: rgba(15,19,24,0.55);
+  color: var(--text);
+  border-radius: 14px;
+  padding:9px 12px;
+  font-weight:800;
   font-size:12px;
 }
+.histBtn:active{ transform: translateY(1px); }
 
 .histBtn.primary{
-  background:var(--accent);
-  color:#0B0D10;
-  border:0;
+  border-color: rgba(110,231,183,0.55);
+  box-shadow: 0 0 0 3px rgba(110,231,183,0.12);
+}
+
+.histBtn.warn{
+  border-color: rgba(255,255,255,0.14);
 }
 
 .histBtn.danger{
-  background:transparent;
-  color:var(--text);
-  border:1px solid rgba(255,255,255,0.18);
+  border-color: rgba(255,99,99,0.55);
 }
 
 .histEditRow{
   display:grid;
-  grid-template-columns: 60px 1fr 1fr 1fr 42px;
-  gap:8px;
+  grid-template-columns: 56px 1fr 1fr 34px;
+  gap:10px;
   align-items:center;
-  padding:8px 10px;
-  border-radius:12px;
-  border:1px solid rgba(32,39,52,0.65);
-  background:#0F1318;
-  font-size:12px;
+  padding:10px 0;
 }
 
-.histEditRow .lbl{ color:var(--muted); }
-
-.histEditRow input{
-  width:100%;
-  padding:10px 10px;
-  border-radius:12px;
-  border:1px solid var(--stroke);
-  background:#0B0D10;
-  color:var(--text);
-  font-size:16px; /* prevents iOS zoom */
+.histEditRow .lbl{
+  color:var(--muted);
+  font-size:12px;
+  font-weight:800;
 }
 
 .histEditRow input[type="checkbox"]{
-  width:18px;
-  height:18px;
-  padding:0;
-  border-radius:6px;
-}
-/* --- History delete controls --- */
-.histActions{
-  display:flex;
-  flex-wrap:wrap;
-  gap:8px;
-  margin-top:10px;
+  width:18px; height:18px;
 }
 
-.histBtn.warn{
-  background:transparent;
-  border:1px solid rgba(255,255,255,0.18);
-  color:var(--text);
+/* ---------- Toast ---------- */
+.toast{
+  position:fixed;
+  left:16px;
+  right:16px;
+  bottom:calc(14px + var(--safe-bottom));
+  background: rgba(15,19,24,0.80);
+  border:1px solid rgba(255,255,255,0.10);
+  padding:12px 14px;
+  border-radius: 14px;
+  font-size:13px;
+  color: var(--text);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(12px);
 }
 
-.histBtn.danger{
-  background:transparent;
-  border:1px solid rgba(255,255,255,0.22);
-  color:var(--text);
-}
-
-
-
-
+.hidden{ display:none; }
