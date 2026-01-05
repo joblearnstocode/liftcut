@@ -1,10 +1,9 @@
-/* LiftCut — app.js (FULL, REPLACEABLE) — v10.1
-   - Restores: full history editing + safe deletion controls
-   - Adds: forced baseline onboarding gate
-   - Keeps: auto-advance reps, prev-line under sets, safe progression + caps, editable weights/reps
+/* LiftCut — app.js (FULL, REPLACEABLE) — v10.2
+   - Replaces confirm() exercise completion prompts with iOS-style bottom sheet (Option A)
+   - Keeps: onboarding gate, editable history + safe deletion, auto-advance reps, prev-line, safe progression + caps
 */
 
-const LS_KEYS = ["liftcut_state_v101", "liftcut_state_v10", "liftcut_state_v9", "liftcut_state_v8", "liftcut_state_v7", "liftcut_state_v6", "liftcut_state_v5_history_accordion"];
+const LS_KEYS = ["liftcut_state_v102", "liftcut_state_v101", "liftcut_state_v10", "liftcut_state_v9", "liftcut_state_v8", "liftcut_state_v7", "liftcut_state_v6", "liftcut_state_v5_history_accordion"];
 
 /* ---------------- Program ---------------- */
 const Program = {
@@ -165,6 +164,92 @@ let promptedExerciseIds = new Set();
 /* History edit state */
 let editingSessionId = null;
 const editSnapshot = new Map();
+
+/* ---------------- Bottom Sheet (NEW) ---------------- */
+let sheet = null;
+function ensureBottomSheet() {
+  if (sheet) return;
+
+  const overlay = document.createElement("div");
+  overlay.className = "sheetOverlay hidden";
+  overlay.id = "sheetOverlay";
+  overlay.innerHTML = `
+    <div class="sheetPanel" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+      <div class="sheetHandle"></div>
+      <div class="sheetBody">
+        <div class="sheetTitle" id="sheetTitle"></div>
+        <div class="sheetSub" id="sheetSub"></div>
+        <div class="sheetActions">
+          <button class="btn ghost" type="button" id="sheetSecondary">Back</button>
+          <button class="btn" type="button" id="sheetPrimary">Next</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  const titleEl = overlay.querySelector("#sheetTitle");
+  const subEl = overlay.querySelector("#sheetSub");
+  const primaryBtn = overlay.querySelector("#sheetPrimary");
+  const secondaryBtn = overlay.querySelector("#sheetSecondary");
+
+  const api = {
+    overlay,
+    titleEl,
+    subEl,
+    primaryBtn,
+    secondaryBtn,
+    onPrimary: null,
+    onSecondary: null,
+    show({ title, sub, primaryText, secondaryText, onPrimary, onSecondary }) {
+      api.titleEl.textContent = title || "";
+      api.subEl.textContent = sub || "";
+      api.primaryBtn.textContent = primaryText || "Next";
+      api.secondaryBtn.textContent = secondaryText || "Back";
+
+      api.onPrimary = onPrimary || null;
+      api.onSecondary = onSecondary || null;
+
+      api.overlay.classList.remove("hidden");
+    },
+    hide() {
+      api.overlay.classList.add("hidden");
+      api.onPrimary = null;
+      api.onSecondary = null;
+    },
+  };
+
+  // Tap outside to close -> back to list (safe default)
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) {
+      if (api.onSecondary) api.onSecondary();
+      api.hide();
+    }
+  });
+
+  primaryBtn.onclick = () => {
+    const fn = api.onPrimary;
+    api.hide();
+    if (fn) fn();
+  };
+  secondaryBtn.onclick = () => {
+    const fn = api.onSecondary;
+    api.hide();
+    if (fn) fn();
+  };
+
+  // Esc key for desktop safety
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !api.overlay.classList.contains("hidden")) {
+      const fn = api.onSecondary;
+      api.hide();
+      if (fn) fn();
+    }
+  });
+
+  sheet = api;
+}
 
 /* ---------------- Tabs ---------------- */
 function setActiveTab(which) {
@@ -481,13 +566,37 @@ function nextIncompleteIndex(fromIndex){
   for(let j=0;j<exs.length;j++) if(!isExerciseComplete(exs[j])) return j;
   return -1;
 }
-function promptAfterExerciseComplete(idx){
+
+/* Bottom sheet replacement for exercise completion */
+function showExerciseCompleteSheet(fromIndex){
+  ensureBottomSheet();
+
   const exs=getExerciseList();
-  const nextIdx=nextIncompleteIndex(idx);
-  if(nextIdx===-1){ toast("All exercises complete"); renderWorkout(); setActiveTab("workout"); return; }
-  const ok = confirm(`Exercise complete.\n\nNext: ${exs[nextIdx].name}\n\nOK = Next, Cancel = Workout list.`);
-  if(ok) openDetail(exs[nextIdx], nextIdx);
-  else { renderWorkout(); setActiveTab("workout"); }
+  const nextIdx=nextIncompleteIndex(fromIndex);
+
+  // If none left, just return to list
+  if(nextIdx === -1){
+    sheet.show({
+      title: "Workout section complete",
+      sub: "All exercises for today are complete. Return to the workout list.",
+      primaryText: "Workout list",
+      secondaryText: "Stay here",
+      onPrimary: () => { renderWorkout(); setActiveTab("workout"); },
+      onSecondary: () => { /* no-op */ },
+    });
+    return;
+  }
+
+  const nextName = exs[nextIdx].name;
+
+  sheet.show({
+    title: "Exercise complete",
+    sub: `Next in your default order: ${nextName}`,
+    primaryText: "Next exercise",
+    secondaryText: "Back to list",
+    onPrimary: () => openDetail(exs[nextIdx], nextIdx),
+    onSecondary: () => { renderWorkout(); setActiveTab("workout"); },
+  });
 }
 
 function openDetail(exercise,index){
@@ -595,9 +704,10 @@ function renderSets(exercise){
     renderSets(exercise);
     if(autoAdvance) focusNextRepsInput(i);
 
+    // When the whole exercise is complete, show bottom sheet once
     if(currentExercise && isExerciseComplete(exercise) && !promptedExerciseIds.has(exercise.id)){
       promptedExerciseIds.add(exercise.id);
-      promptAfterExerciseComplete(currentExercise.index);
+      showExerciseCompleteSheet(currentExercise.index);
     }
   }
 
@@ -989,6 +1099,7 @@ function el(id){ const n=document.getElementById(id); if(!n) throw new Error(`Mi
 /* ---------------- Init ---------------- */
 ensureTimer();
 recomputeBenchmark();
+ensureBottomSheet();
 render();
 renderSettings();
 renderHistory();
