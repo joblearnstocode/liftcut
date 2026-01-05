@@ -1,26 +1,13 @@
-/* LiftCut — app.js (FULL, REPLACEABLE) — v7 (Hypertrophy-safe lower body)
-   Updates in v7 (per your “go ahead”):
-   1) LOWER-BODY / MACHINE SEEDS reduced (hypertrophy-first).
-   2) HYpertrophy “AUTO CAP” per exercise so suggested weights cannot overshoot automatically.
-      - Caps only constrain AUTO suggestions.
-      - If you manually override to a higher weight, the app will not force you down.
-   3) Slower progression for lower machines (and conservative for lower compounds):
-      - Upper body: increase when ALL sets hit top of range (strict rule, as agreed).
-      - Lower machines: require 2 consecutive sessions at top (at same weight) before increasing.
-      - Lower compounds: still strict (1 session), but capped and rep-biased.
-   4) Leg-day rep ranges biased upward (hypertrophy + joint-friendly):
-      - Squat: 10–12
-      - RDL: 10–12
-      - Leg press: 12–15
-      - Leg curl/ext: 12–15
+/* LiftCut — app.js (FULL, REPLACEABLE) — v8
+   Adds: “Prev” comparison under each set (small, muted, non-clunky)
+   Keeps: hypertrophy-safe lower-body seeding + auto-caps + slower lower-machine progression + history editing/deletion
 
-   Important: Machine variability remains real (leg press, stacks). The best protection is:
-     - conservative Week-1 seeds (done here),
-     - slow auto-progression on lower machines (done here),
-     - and editable suggested weights (already in place).
+   “Prev” logic (your Option A):
+   - Prefer previous session of the SAME workout day key (UA/LA/UB/UC/LB).
+   - If none exists, fall back to most recent session that contains that exercise anywhere.
 */
 
-const LS_KEYS = ["liftcut_state_v7", "liftcut_state_v6", "liftcut_state_v5_history_accordion"];
+const LS_KEYS = ["liftcut_state_v8", "liftcut_state_v7", "liftcut_state_v6", "liftcut_state_v5_history_accordion"];
 
 /* ---------------- Program ---------------- */
 const Program = {
@@ -78,104 +65,34 @@ function ex(id, name, sets, reps, rest, unit) {
 
 /* ---------------- Defaults: steps ---------------- */
 const DEFAULT_STEP_KG = {
-  // Barbells / big compounds
   bench: 2.5, row: 2.5, ohp: 2.5, squat: 2.5, rdl: 2.5, deadlift: 2.5, hipthrust: 2.5,
-  // Machines/cables
   latpd: 2.5, tpd: 2.5, fly: 2.5, toh: 2.5, facepull: 2.5, pull: 2.5, csrow: 2.5, latrow: 2.5, reardelt: 2.5,
   legcurl: 2.5, legext: 2.5, calf: 2.5, calf2: 2.5,
-  // Special: leg press often 5kg jumps
   lp: 5,
-  // Dumbbells (per hand)
   hc: 2, incdb: 2, latraise: 2, curl: 2, lunge: 2, bulg: 2,
 };
 
-/* ---------------- Seed ratios (HYERTROPHY-FIRST) ----------------
-   These are working-weight seeds (not capacity). Conservative by design.
-*/
+/* ---------------- Seed ratios (hypertrophy-first) ---------------- */
 const SEED_RATIO_TO_BENCH_1RM = {
-  // upper
-  bench: 0.68,
-  row: 0.60,
-  ohp: 0.42,
-  latpd: 0.50,
-  tpd: 0.40,
-  fly: 0.32,
-  toh: 0.36,
-  facepull: 0.30,
-  reardelt: 0.20,
-  csrow: 0.55,
-  latrow: 0.40,
-  pull: 0.50,
-
-  // dumbbells (per hand)
-  hc: 0.20,
-  incdb: 0.20,
-  latraise: 0.09,
-  curl: 0.16,
-
-  // lower (bench-to-lower is crude; seeds are intentionally conservative)
-  squat: 0.70,
-  rdl: 0.65,
-  deadlift: 0.80,
-  hipthrust: 0.80,
-  lp: 1.35,      // reduced from 2.00 to hypertrophy-safe seed
-  lunge: 0.18,   // per hand
-  bulg: 0.16,    // per hand
-  legcurl: 0.45,
-  legext: 0.38,
-  calf: 0.85,
-  calf2: 0.75,
+  bench: 0.68, row: 0.60, ohp: 0.42, latpd: 0.50, tpd: 0.40, fly: 0.32, toh: 0.36, facepull: 0.30, reardelt: 0.20,
+  csrow: 0.55, latrow: 0.40, pull: 0.50,
+  hc: 0.20, incdb: 0.20, latraise: 0.09, curl: 0.16,
+  squat: 0.70, rdl: 0.65, deadlift: 0.80, hipthrust: 0.80, lp: 1.35,
+  lunge: 0.18, bulg: 0.16, legcurl: 0.45, legext: 0.38, calf: 0.85, calf2: 0.75,
 };
 
-/* ---------------- AUTO CAP ratios (bench e1RM multiple) ----------------
-   Caps prevent automatic suggestions from drifting into “too heavy” territory.
-   - If user manually logs heavier than cap, we do NOT force weight down.
-*/
+/* ---------------- Auto caps (bench e1RM multiple) ---------------- */
 const AUTO_CAP_RATIO_TO_BENCH_1RM = {
-  // upper compounds (generous)
-  bench: 0.80,
-  row: 0.78,
-  ohp: 0.55,
-
-  // pulling / machines
-  latpd: 0.70,
-  pull: 0.75,
-  csrow: 0.80,
-  latrow: 0.60,
-
-  // isolation
-  tpd: 0.60,
-  fly: 0.55,
-  toh: 0.60,
-  facepull: 0.55,
-  reardelt: 0.35,
-
-  // DB (per hand)
-  incdb: 0.32,
-  hc: 0.30,
-  curl: 0.26,
-  latraise: 0.16,
-  lunge: 0.28,
-  bulg: 0.26,
-
-  // lower caps (conservative)
-  squat: 0.88,
-  rdl: 0.85,
-  deadlift: 1.05,
-  hipthrust: 1.05,
-  lp: 1.65,        // prevents auto creeping too high
-  legcurl: 0.70,
-  legext: 0.60,
-  calf: 1.10,
-  calf2: 1.00,
+  bench: 0.80, row: 0.78, ohp: 0.55,
+  latpd: 0.70, pull: 0.75, csrow: 0.80, latrow: 0.60,
+  tpd: 0.60, fly: 0.55, toh: 0.60, facepull: 0.55, reardelt: 0.35,
+  incdb: 0.32, hc: 0.30, curl: 0.26, latraise: 0.16, lunge: 0.28, bulg: 0.26,
+  squat: 0.88, rdl: 0.85, deadlift: 1.05, hipthrust: 1.05, lp: 1.65,
+  legcurl: 0.70, legext: 0.60, calf: 1.10, calf2: 1.00,
 };
 
-/* ---------------- Exercise classification ---------------- */
 const LOWER_MACHINE_IDS = new Set(["lp", "legcurl", "legext", "calf", "calf2"]);
-const LOWER_COMPOUND_IDS = new Set(["squat", "rdl", "deadlift", "hipthrust", "lunge", "bulg"]);
 function isLowerMachine(exId) { return LOWER_MACHINE_IDS.has(exId); }
-function isLowerCompound(exId) { return LOWER_COMPOUND_IDS.has(exId); }
-function isDumbbellUnit(unit) { return String(unit || "").toLowerCase().includes("hand"); }
 
 /* ---------------- State ---------------- */
 function defaultState() {
@@ -187,14 +104,14 @@ function defaultState() {
       bodyWeightKg: 71.8,
       bodyFatPct: 15,
       barKg: 20,
-      benchSetWeightKg: 50, // total bar + plates
+      benchSetWeightKg: 50, // total (bar+plates)
       benchSetReps: 12,
       benchE1RM: null,
       coeffRSI: null,
       coeffASI: null,
       coeffLeanIndex: null,
     },
-    steps: { ...DEFAULT_STEP_KG }, // per exercise id step size
+    steps: { ...DEFAULT_STEP_KG },
     progression: { completedSessions: 0, nextIndex: 0 },
     active: null,
     history: [],
@@ -247,7 +164,6 @@ const historyList = el("historyList");
 const exportBtn = el("exportBtn");
 const exportOut = el("exportOut");
 
-// Existing settings fields
 const benchW = el("benchW");
 const benchR = el("benchR");
 const bench1rmEl = el("bench1rm");
@@ -256,8 +172,9 @@ const saveSettingsBtn = el("saveSettingsBtn");
 const toastEl = el("toast");
 let toastTimer = null;
 
-let currentExercise = null; // { ex, index }
+let currentExercise = null;      // { ex, index }
 let timerInterval = null;
+let prevSetsForDetail = null;    // Array of sets from previous comparable session (same workout key preferred)
 
 /* ---------------- Tabs ---------------- */
 function setActiveTab(which) {
@@ -285,19 +202,9 @@ tabHistory.onclick = () => {
   } catch (e) {
     st.history = [];
     save(st);
-    try {
-      renderHistory();
-      setActiveTab("history");
-      toast("History reset (old data incompatible)");
-    } catch (_) {
-      localStorage.removeItem(LS_KEYS[0]);
-      st = defaultState();
-      save(st);
-      render();
-      renderHistory();
-      setActiveTab("history");
-      toast("App reset");
-    }
+    renderHistory();
+    setActiveTab("history");
+    toast("History reset (old data incompatible)");
   }
 };
 
@@ -362,6 +269,10 @@ function esc(s) {
 function deepCopy(obj) { return JSON.parse(JSON.stringify(obj)); }
 function msDays(days) { return days * 24 * 60 * 60 * 1000; }
 
+function isClose(a, b, tol = 0.51) {
+  return isFinite(a) && isFinite(b) && Math.abs(a - b) <= tol;
+}
+
 /* ---------------- Benchmark ---------------- */
 function recomputeBenchmark() {
   const p = st.profile;
@@ -395,8 +306,39 @@ function stepForExercise(exId) {
   return st.steps?.[exId] ?? 2.5;
 }
 
-function isClose(a, b, tol = 0.25) { // tolerate minor formatting / rounding noise
-  return isFinite(a) && isFinite(b) && Math.abs(a - b) <= tol;
+function maxAutoWeight(exercise) {
+  recomputeBenchmark();
+  const e1 = st.profile.benchE1RM;
+  if (!e1 || !isFinite(e1)) return null;
+
+  const ratio = AUTO_CAP_RATIO_TO_BENCH_1RM[exercise.id];
+  if (!ratio || !isFinite(ratio)) return null;
+
+  const step = stepForExercise(exercise.id);
+  return roundToStep(e1 * ratio, step);
+}
+
+function seedWeight(exercise) {
+  recomputeBenchmark();
+  const e1 = st.profile.benchE1RM;
+  const ratio = SEED_RATIO_TO_BENCH_1RM[exercise.id] ?? 0.45;
+  const step = stepForExercise(exercise.id);
+
+  let raw = (e1 && isFinite(e1)) ? e1 * ratio : 0;
+
+  if (!raw || raw <= 0) {
+    const fallback = String(exercise.unit || "").toLowerCase().includes("hand") ? 10 : 20;
+    raw = fallback;
+  }
+
+  let seeded = roundToStep(raw, step);
+
+  const cap = maxAutoWeight(exercise);
+  if (cap != null && isFinite(cap)) {
+    seeded = Math.min(seeded, cap);
+    seeded = roundToStep(seeded, step);
+  }
+  return seeded;
 }
 
 function extractSessionPerformance(sess, exId, requiredSets) {
@@ -406,7 +348,6 @@ function extractSessionPerformance(sess, exId, requiredSets) {
   const completed = arr.filter(s => s?.completed);
   if (completed.length === 0) return null;
 
-  // Determine representative weight (median of completed set weights)
   const weights = completed.map(s => normalizeNum(s.weight)).filter(v => v != null && v > 0);
   const reps = completed.map(s => normalizeInt(s.reps)).filter(v => v != null && v > 0);
   if (weights.length === 0 || reps.length === 0) return null;
@@ -435,7 +376,6 @@ function getLastPerformance(exId, requiredSets) {
   return null;
 }
 
-// Count consecutive "all sets at top" sessions at SAME WEIGHT (strict streak)
 function topStreakAtSameWeight(exId, requiredSets, repMax) {
   let streak = 0;
   let lastW = null;
@@ -444,7 +384,8 @@ function topStreakAtSameWeight(exId, requiredSets, repMax) {
     const perf = extractSessionPerformance(st.history[i], exId, requiredSets);
     if (!perf) continue;
 
-    const allTop = perf.completedCount >= requiredSets &&
+    const allTop =
+      perf.completedCount >= requiredSets &&
       perf.repsBySet.length >= requiredSets &&
       perf.repsBySet.every(r => r >= repMax);
 
@@ -456,51 +397,10 @@ function topStreakAtSameWeight(exId, requiredSets, repMax) {
       continue;
     }
 
-    if (isClose(perf.lastWeight, lastW, 0.51)) {
-      streak += 1;
-    } else {
-      break;
-    }
+    if (isClose(perf.lastWeight, lastW)) streak += 1;
+    else break;
   }
   return streak;
-}
-
-function maxAutoWeight(exercise) {
-  recomputeBenchmark();
-  const e1 = st.profile.benchE1RM;
-  if (!e1 || !isFinite(e1)) return null;
-
-  const ratio = AUTO_CAP_RATIO_TO_BENCH_1RM[exercise.id];
-  if (!ratio || !isFinite(ratio)) return null;
-
-  const step = stepForExercise(exercise.id);
-  return roundToStep(e1 * ratio, step);
-}
-
-function seedWeight(exercise) {
-  recomputeBenchmark();
-  const e1 = st.profile.benchE1RM;
-  const ratio = SEED_RATIO_TO_BENCH_1RM[exercise.id] ?? 0.45;
-  const step = stepForExercise(exercise.id);
-
-  let raw = (e1 && isFinite(e1)) ? e1 * ratio : 0;
-
-  // Emergency fallback if benchmark missing
-  if (!raw || raw <= 0) {
-    const fallback = isDumbbellUnit(exercise.unit) ? 10 : 20;
-    raw = fallback;
-  }
-
-  let seeded = roundToStep(raw, step);
-
-  // Apply auto-cap to seed
-  const cap = maxAutoWeight(exercise);
-  if (cap != null && isFinite(cap)) {
-    seeded = Math.min(seeded, cap);
-    seeded = roundToStep(seeded, step);
-  }
-
-  return seeded;
 }
 
 function suggestNextWeight(exercise) {
@@ -509,23 +409,20 @@ function suggestNextWeight(exercise) {
   const step = stepForExercise(exercise.id);
   const rr = parseRepRange(exercise.reps);
 
-  // No history: seed conservatively
   if (!perf) return seedWeight(exercise);
-
-  // If rep range missing, keep last weight stable
   if (rr.min == null || rr.max == null) return roundToStep(perf.lastWeight, step);
 
   const repsBySet = perf.repsBySet;
   const belowMinCount = repsBySet.filter(r => r < rr.min).length;
   const manyBelowMin = belowMinCount >= Math.ceil(requiredSets / 2);
 
-  const allTop = perf.completedCount >= requiredSets &&
+  const allTop =
+    perf.completedCount >= requiredSets &&
     repsBySet.length >= requiredSets &&
     repsBySet.every(r => r >= rr.max);
 
-  // Lower machine progression: 2-session streak at the same weight
   const needStreak = isLowerMachine(exercise.id) ? 2 : 1;
-  const streak = (allTop ? topStreakAtSameWeight(exercise.id, requiredSets, rr.max) : 0);
+  const streak = allTop ? topStreakAtSameWeight(exercise.id, requiredSets, rr.max) : 0;
 
   let next = perf.lastWeight;
 
@@ -533,15 +430,38 @@ function suggestNextWeight(exercise) {
   else if (manyBelowMin) next = Math.max(step, perf.lastWeight - step);
   else next = perf.lastWeight;
 
-  // Apply auto-cap ONLY if we are below/at cap already; do not force user down
   const cap = maxAutoWeight(exercise);
   if (cap != null && isFinite(cap)) {
-    if (perf.lastWeight <= cap + 0.51) {
-      next = Math.min(next, cap);
-    }
+    // Only constrain auto if you have not already surpassed cap historically
+    if (perf.lastWeight <= cap + 0.51) next = Math.min(next, cap);
   }
 
   return roundToStep(next, step);
+}
+
+/* ---------------- Previous-session comparison (Option A) ---------------- */
+function getPrevComparableSets(activeKey, exId) {
+  // Prefer previous session of same workout key
+  for (let i = st.history.length - 1; i >= 0; i--) {
+    const sess = st.history[i];
+    if (sess?.key === activeKey && sess?.sets?.[exId]) return sess.sets[exId];
+  }
+  // Fallback to last time that exercise appeared anywhere
+  for (let i = st.history.length - 1; i >= 0; i--) {
+    const sess = st.history[i];
+    if (sess?.sets?.[exId]) return sess.sets[exId];
+  }
+  return null;
+}
+
+function formatPrevLine(prevSet) {
+  if (!prevSet) return "Prev: —";
+  const w = String(prevSet.weight ?? "").trim();
+  const r = String(prevSet.reps ?? "").trim();
+  if (!w && !r) return "Prev: —";
+  const wPart = w ? `${w} kg` : "— kg";
+  const rPart = r ? `${r} reps` : "— reps";
+  return `Prev: ${wPart} · ${rPart}`;
 }
 
 /* ---------------- Timer ---------------- */
@@ -670,6 +590,8 @@ function renderWorkout() {
 /* ---------------- Detail ---------------- */
 function openDetail(exercise, index) {
   currentExercise = { ex: exercise, index };
+  prevSetsForDetail = getPrevComparableSets(st.active?.key, exercise.id);
+
   const wPlan = suggestNextWeight(exercise);
   const cap = maxAutoWeight(exercise);
   const step = stepForExercise(exercise.id);
@@ -689,7 +611,6 @@ function openDetail(exercise, index) {
 
   let extra = `step ${step}${exercise.unit.includes("hand") ? "/hand" : ""}`;
   if (cap != null && isFinite(cap)) extra += ` • cap ${fmtKg(cap)} ${exercise.unit}`;
-
   planPill.textContent = `Plan ${fmtKg(wPlan)} ${exercise.unit} • ${extra}`;
 
   renderRestPill();
@@ -736,12 +657,18 @@ function promptAfterExerciseComplete(idx) {
   else { renderWorkout(); setActiveTab("workout"); }
 }
 
-/* ---------------- Sets UI + commit logic ---------------- */
+/* ---------------- Sets UI + commit logic ----------------
+   - “Prev” appears directly under the inputs per set, in small muted font.
+   - Timer starts only after reps commit (blur or Enter).
+*/
 function renderSets(exercise) {
   setsEl.innerHTML = "";
   const arr = st.active.sets[exercise.id];
 
   arr.forEach((s, idx) => {
+    const prev = Array.isArray(prevSetsForDetail) ? prevSetsForDetail[idx] : null;
+    const prevLine = formatPrevLine(prev);
+
     const row = document.createElement("div");
     row.className = "setrow";
     row.innerHTML = `
@@ -749,12 +676,18 @@ function renderSets(exercise) {
         <div>Set ${s.setIndex}</div>
         <div class="doneDot ${s.completed ? "on" : ""}"></div>
       </div>
+
       <input class="wIn" inputmode="decimal" placeholder="Weight (kg)" value="${esc(s.weight || "")}" data-i="${idx}" data-k="weight" />
       <input class="rIn" inputmode="numeric" placeholder="Reps" value="${esc(s.reps || "")}" data-i="${idx}" data-k="reps" />
+
+      <div class="prevMini" style="grid-column: 2 / 4; margin-top:-6px; font-size:12px; color:var(--muted);">
+        ${esc(prevLine)}
+      </div>
     `;
     setsEl.appendChild(row);
   });
 
+  // Store while typing
   [...setsEl.querySelectorAll("input")].forEach((inp) => {
     inp.oninput = () => {
       const i = Number(inp.dataset.i);
@@ -764,7 +697,7 @@ function renderSets(exercise) {
     };
   });
 
-  // Weight blur: format only
+  // Weight blur: format weight only
   setsEl.querySelectorAll("input.wIn").forEach((inp) => {
     inp.onblur = () => {
       const i = Number(inp.dataset.i);
@@ -774,8 +707,7 @@ function renderSets(exercise) {
       if (wN == null) s.weight = "";
       else {
         const step = stepForExercise(exercise.id);
-        const rounded = roundToStep(wN, step);
-        s.weight = fmtKg(rounded);
+        s.weight = fmtKg(roundToStep(wN, step));
       }
 
       save(st);
@@ -806,7 +738,6 @@ function renderSets(exercise) {
     const was = !!s.completed;
     s.completed = computeCompleted(s);
 
-    // If exercise becomes incomplete (editing), allow future prompt again
     if (!isExerciseComplete(exercise)) {
       promptedExerciseIds.delete(exercise.id);
     }
@@ -821,13 +752,13 @@ function renderSets(exercise) {
 
     renderSets(exercise);
 
-    // prompt only once per exercise completion
     if (currentExercise && isExerciseComplete(exercise) && !promptedExerciseIds.has(exercise.id)) {
       promptedExerciseIds.add(exercise.id);
       promptAfterExerciseComplete(currentExercise.index);
     }
   }
 
+  // Reps commit: blur OR Enter triggers commit
   setsEl.querySelectorAll("input.rIn").forEach((inp) => {
     inp.onblur = () => { commitSet(Number(inp.dataset.i)); };
     inp.onkeydown = (e) => {
@@ -862,6 +793,7 @@ finishBtn.onclick = () => {
   st.progression.nextIndex = (st.progression.nextIndex + 1) % Program.cycle.length;
   st.timer = { running: false, endAt: 0, lastShownDone: false, label: "" };
   promptedExerciseIds = new Set();
+  prevSetsForDetail = null;
 
   save(st);
   render();
@@ -1234,127 +1166,7 @@ saveSettingsBtn.onclick = () => {
   toast("Benchmark saved");
 };
 
-/* ---------------- Onboarding overlay (injected) ---------------- */
-function showOnboardingIfNeeded() {
-  if (st.profile.onboarded) return;
-
-  const overlayId = "lc_onboarding";
-  if (document.getElementById(overlayId)) return;
-
-  const p = st.profile;
-
-  const html = `
-  <div id="${overlayId}" style="
-    position:fixed; inset:0; z-index:9999;
-    background:rgba(0,0,0,0.72); display:flex; align-items:flex-end; justify-content:center;
-    padding:16px;">
-    <div style="
-      width:min(520px,100%);
-      background:#12161C; border:1px solid #202734; border-radius:18px;
-      padding:16px; color:#E8EEF8; font-family:-apple-system,system-ui,Segoe UI,Roboto;">
-      <div style="font-weight:700; font-size:18px;">Quick setup</div>
-      <div style="margin-top:6px; color:#A7B2C3; font-size:13px; line-height:1.35;">
-        Enter your baseline so the app can estimate starting weights and track your progress.
-      </div>
-
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px;">
-        ${fieldSelect("Sex", "lc_sex", ["male","female"], p.sex)}
-        ${fieldNumber("Height (cm)", "lc_h", p.heightCm)}
-        ${fieldNumber("Bodyweight (kg)", "lc_bw", p.bodyWeightKg)}
-        ${fieldNumber("Body fat % (optional)", "lc_bf", p.bodyFatPct)}
-        ${fieldSelect("Bar weight (kg)", "lc_bar", ["15","20"], String(p.barKg))}
-        ${fieldNumber("Bench set weight (kg)", "lc_benchW", p.benchSetWeightKg)}
-        ${fieldNumber("Bench set reps", "lc_benchR", p.benchSetReps)}
-      </div>
-
-      <div style="margin-top:12px; padding:10px; border:1px solid #202734; border-radius:14px; background:#0F1318;">
-        <div style="font-size:13px; color:#A7B2C3;">
-          Hypertrophy-safe auto-caps are enabled by default. You can always edit suggested weights.
-        </div>
-      </div>
-
-      <div style="display:flex; gap:10px; margin-top:12px;">
-        <button id="lc_save" style="
-          flex:1; background:#6EE7B7; border:0; border-radius:14px;
-          padding:10px 14px; font-weight:700; cursor:pointer;">Save</button>
-        <button id="lc_skip" style="
-          background:transparent; color:#E8EEF8; border:1px solid #202734;
-          border-radius:14px; padding:10px 14px; font-weight:700; cursor:pointer;">Skip</button>
-      </div>
-    </div>
-  </div>`;
-
-  document.body.insertAdjacentHTML("beforeend", html);
-
-  const overlay = document.getElementById(overlayId);
-  const saveBtn = document.getElementById("lc_save");
-  const skipBtn = document.getElementById("lc_skip");
-
-  skipBtn.onclick = () => {
-    overlay.remove();
-    toast("Setup skipped (you can do it in Settings)");
-  };
-
-  saveBtn.onclick = () => {
-    const sex = val("lc_sex", "male");
-    const h = normalizeNum(val("lc_h", p.heightCm));
-    const bw = normalizeNum(val("lc_bw", p.bodyWeightKg));
-    const bf = normalizeNum(val("lc_bf", p.bodyFatPct));
-    const bar = normalizeNum(val("lc_bar", p.barKg));
-    const bwSet = normalizeNum(val("lc_benchW", p.benchSetWeightKg));
-    const br = normalizeInt(val("lc_benchR", p.benchSetReps));
-
-    if (!bw || !bwSet || !br) { toast("Please enter bodyweight + bench set"); return; }
-
-    st.profile.sex = sex;
-    st.profile.heightCm = h ?? st.profile.heightCm;
-    st.profile.bodyWeightKg = bw;
-    st.profile.bodyFatPct = isFinite(bf) ? bf : null;
-    st.profile.barKg = bar ?? st.profile.barKg;
-    st.profile.benchSetWeightKg = bwSet;
-    st.profile.benchSetReps = br;
-
-    st.profile.onboarded = true;
-    recomputeBenchmark();
-
-    benchW.value = st.profile.benchSetWeightKg;
-    benchR.value = st.profile.benchSetReps;
-
-    save(st);
-    overlay.remove();
-    render();
-    renderSettings();
-    toast("Setup saved");
-  };
-
-  function fieldNumber(label, id, v) {
-    return `
-      <div>
-        <div style="font-size:12px; color:#A7B2C3; margin-bottom:4px;">${esc(label)}</div>
-        <input id="${id}" inputmode="decimal" value="${esc(v ?? "")}" style="
-          width:100%; padding:12px; border-radius:14px; border:1px solid #202734;
-          background:#0F1318; color:#E8EEF8; font-size:16px;">
-      </div>`;
-  }
-  function fieldSelect(label, id, options, selected) {
-    const opts = options.map(o => `<option value="${esc(o)}" ${String(o)===String(selected)?"selected":""}>${esc(o)}</option>`).join("");
-    return `
-      <div>
-        <div style="font-size:12px; color:#A7B2C3; margin-bottom:4px;">${esc(label)}</div>
-        <select id="${id}" style="
-          width:100%; padding:12px; border-radius:14px; border:1px solid #202734;
-          background:#0F1318; color:#E8EEF8; font-size:16px;">
-          ${opts}
-        </select>
-      </div>`;
-  }
-  function val(id, fallback) {
-    const el = document.getElementById(id);
-    return el ? el.value : fallback;
-  }
-}
-
-/* ---------------- Storage (self-healing + migration) ---------------- */
+/* ---------------- Storage (migration) ---------------- */
 function load() {
   for (const key of LS_KEYS) {
     try {
@@ -1383,12 +1195,6 @@ function load() {
       if (!Array.isArray(parsed.history)) parsed.history = [];
       if (!parsed.timer) parsed.timer = def.timer;
 
-      // Clean timer
-      if (typeof parsed.timer.running !== "boolean") parsed.timer.running = false;
-      if (typeof parsed.timer.endAt !== "number") parsed.timer.endAt = 0;
-      if (typeof parsed.timer.lastShownDone !== "boolean") parsed.timer.lastShownDone = false;
-      if (typeof parsed.timer.label !== "string") parsed.timer.label = "";
-
       // Normalize profile numbers
       parsed.profile.bodyWeightKg = normalizeNum(parsed.profile.bodyWeightKg) ?? def.profile.bodyWeightKg;
       parsed.profile.heightCm = normalizeNum(parsed.profile.heightCm) ?? def.profile.heightCm;
@@ -1397,15 +1203,10 @@ function load() {
       parsed.profile.benchSetWeightKg = normalizeNum(parsed.profile.benchSetWeightKg) ?? def.profile.benchSetWeightKg;
       parsed.profile.benchSetReps = normalizeInt(parsed.profile.benchSetReps) ?? def.profile.benchSetReps;
 
-      // Keep history objects only if they have sets
-      parsed.history = parsed.history.filter((s) => s && typeof s === "object" && s.sets && typeof s.sets === "object");
-
-      // Save into v7 key
+      // Save forward into v8 key
       localStorage.setItem(LS_KEYS[0], JSON.stringify(parsed));
       return parsed;
-    } catch (_) {
-      // continue
-    }
+    } catch (_) { /* continue */ }
   }
 
   const d = defaultState();
@@ -1425,7 +1226,6 @@ function el(id) {
 
 /* ---------------- Init ---------------- */
 ensureTimer();
-showOnboardingIfNeeded();
 recomputeBenchmark();
 render();
 renderSettings();
