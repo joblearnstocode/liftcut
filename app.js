@@ -1,9 +1,10 @@
-/* LiftCut — app.js (FULL, REPLACEABLE) — v10
-   Adds: Forced baseline onboarding for true first-time users.
-   Keeps: iOS-style UI (via styles.css), Prev line, editable history, safe weight progression, auto-advance reps.
+/* LiftCut — app.js (FULL, REPLACEABLE) — v10.1
+   - Restores: full history editing + safe deletion controls
+   - Adds: forced baseline onboarding gate
+   - Keeps: auto-advance reps, prev-line under sets, safe progression + caps, editable weights/reps
 */
 
-const LS_KEYS = ["liftcut_state_v10", "liftcut_state_v9", "liftcut_state_v8", "liftcut_state_v7", "liftcut_state_v6", "liftcut_state_v5_history_accordion"];
+const LS_KEYS = ["liftcut_state_v101", "liftcut_state_v10", "liftcut_state_v9", "liftcut_state_v8", "liftcut_state_v7", "liftcut_state_v6", "liftcut_state_v5_history_accordion"];
 
 /* ---------------- Program ---------------- */
 const Program = {
@@ -161,6 +162,10 @@ let timerInterval = null;
 let prevSetsForDetail = null;
 let promptedExerciseIds = new Set();
 
+/* History edit state */
+let editingSessionId = null;
+const editSnapshot = new Map();
+
 /* ---------------- Tabs ---------------- */
 function setActiveTab(which) {
   [tabToday, tabWorkout, tabHistory, tabSettings].forEach((t) => t.classList.remove("active"));
@@ -190,7 +195,7 @@ function toast(msg) {
   toastTimer = setTimeout(() => toastEl.classList.add("hidden"), 1600);
 }
 
-/* ---------------- Math/format helpers ---------------- */
+/* ---------------- Helpers ---------------- */
 function normalizeNum(v){ const n = parseFloat(String(v).replace(",", ".")); return isFinite(n) ? n : null; }
 function normalizeInt(v){ const n = parseInt(String(v), 10); return isFinite(n) ? n : null; }
 function roundToStep(value, step){ if (!isFinite(value) || !isFinite(step) || step<=0) return value; return Math.round(value/step)*step; }
@@ -200,6 +205,9 @@ function fmtKg(x){ return x==null || !isFinite(x) ? "—" : Number(x).toFixed(1)
 function fmtMin(sec){ return `${Math.round(sec/60)}m`; }
 function fmtClock(sec){ const m=Math.floor(sec/60), s=sec%60; return `${m}:${String(s).padStart(2,"0")}`; }
 function esc(s){ return String(s ?? "").replace(/[&<>"']/g,(ch)=> ch==="&"?"&amp;":ch==="<"?"&lt;":ch===">"?"&gt;":ch===`"`?"&quot;":"&#39;"); }
+function deepCopy(obj){ return JSON.parse(JSON.stringify(obj)); }
+function msDays(days){ return days*24*60*60*1000; }
+function isClose(a,b,tol=0.51){ return isFinite(a)&&isFinite(b)&&Math.abs(a-b)<=tol; }
 
 /* ---------------- Benchmark ---------------- */
 function recomputeBenchmark() {
@@ -222,14 +230,13 @@ function recomputeBenchmark() {
   }
 }
 
-/* ---------------- Onboarding gate (NEW) ---------------- */
+/* ---------------- Onboarding UI ---------------- */
 function renderOnboardingCard(next) {
   exercisePreview.innerHTML = `
     <div class="card">
       <div class="h">Set your baseline first</div>
       <div class="s" style="margin-top:6px;">
-        To generate safe suggested weights (and show progress week to week), we need your benchmark.
-        Enter your bench press set weight + reps in Settings.
+        To generate safe suggested weights and track progress, enter your bench set weight + reps in Settings.
       </div>
       <div class="divider"></div>
       <div class="row">
@@ -242,8 +249,9 @@ function renderOnboardingCard(next) {
   if (btn) btn.onclick = () => { renderSettings(); setActiveTab("settings"); };
 }
 
-/* ---------------- Suggestions (only used after onboarding) ---------------- */
+/* ---------------- Suggested weights ---------------- */
 function stepForExercise(exId){ return st.steps?.[exId] ?? 2.5; }
+
 function maxAutoWeight(exercise){
   recomputeBenchmark();
   const e1 = st.profile.benchE1RM;
@@ -257,11 +265,13 @@ function seedWeight(exercise){
   const e1 = st.profile.benchE1RM;
   const ratio = SEED_RATIO_TO_BENCH_1RM[exercise.id] ?? 0.45;
   const step = stepForExercise(exercise.id);
+
   let raw = (e1 && isFinite(e1)) ? e1 * ratio : 0;
-  if (!raw || raw<=0) raw = String(exercise.unit||"").toLowerCase().includes("hand") ? 10 : 20;
+  if (!raw || raw <= 0) raw = String(exercise.unit || "").toLowerCase().includes("hand") ? 10 : 20;
+
   let seeded = roundToStep(raw, step);
   const cap = maxAutoWeight(exercise);
-  if (cap!=null && isFinite(cap)) seeded = roundToStep(Math.min(seeded, cap), step);
+  if (cap != null && isFinite(cap)) seeded = roundToStep(Math.min(seeded, cap), step);
   return seeded;
 }
 function parseRepRange(repStr){
@@ -292,7 +302,6 @@ function getLastPerformance(exId, requiredSets){
   }
   return null;
 }
-function isClose(a,b,tol=0.51){ return isFinite(a)&&isFinite(b)&&Math.abs(a-b)<=tol; }
 function topStreakAtSameWeight(exId, requiredSets, repMax){
   let streak=0, lastW=null;
   for(let i=st.history.length-1;i>=0;i--){
@@ -324,12 +333,13 @@ function suggestNextWeight(exercise){
   let next=perf.lastWeight;
   if(allTop && streak>=needStreak) next=perf.lastWeight+step;
   else if(manyBelowMin) next=Math.max(step, perf.lastWeight-step);
+
   const cap=maxAutoWeight(exercise);
   if(cap!=null&&isFinite(cap) && perf.lastWeight<=cap+0.51) next=Math.min(next, cap);
   return roundToStep(next, step);
 }
 
-/* ---------------- Prev comparison (same day preferred) ---------------- */
+/* ---------------- Prev comparison ---------------- */
 function getPrevComparableSets(activeKey, exId){
   for(let i=st.history.length-1;i>=0;i--){
     const sess=st.history[i];
@@ -358,11 +368,9 @@ function ensureTimer(){
   if(timerInterval) return;
   timerInterval=setInterval(()=>{
     if(!st.timer?.running) return;
-    const rem=remainingSeconds();
     renderRestPill();
-    if(rem<=0){
-      st.timer.running=false;
-      st.timer.endAt=0;
+    if(remainingSeconds()<=0){
+      st.timer.running=false; st.timer.endAt=0;
       save(st);
       toast("Rest complete");
       renderRestPill();
@@ -383,14 +391,12 @@ function renderRestPill(){
   restPill.textContent = st.timer?.running ? `${base} • ${fmtClock(remainingSeconds())}` : base;
 }
 
-/* ---------------- Main render (today) ---------------- */
+/* ---------------- Today render ---------------- */
 function render(){
   const next = Program.cycle[st.progression.nextIndex % Program.cycle.length];
   recomputeBenchmark();
-
   subhead.textContent = `Next: ${next.name} (Suggested ${next.suggested})`;
 
-  // Onboarding gating
   if(!st.profile.onboarded){
     sessionNameEl.textContent = next.name;
     sessionMetaEl.textContent = "Set baseline to generate safe suggested weights";
@@ -401,10 +407,10 @@ function render(){
     return;
   }
 
-  // Normal
   const e1 = st.profile.benchE1RM;
   sessionNameEl.textContent = next.name;
   sessionMetaEl.textContent = e1 ? `Bench e1RM ${Number(e1).toFixed(1)} kg • RSI ${st.profile.coeffRSI ?? "—"}` : "Benchmark missing";
+
   startBtn.textContent = "Start workout";
   startBtn.onclick = () => { ensureActive(); renderWorkout(); setActiveTab("workout"); };
 
@@ -423,7 +429,7 @@ function render(){
     exercisePreview.appendChild(div);
   });
 
-  tabWorkout.style.opacity = st.active ? "1" : "1";
+  tabWorkout.style.opacity = "1";
 }
 
 function ensureActive(){
@@ -434,7 +440,7 @@ function ensureActive(){
   save(st);
 }
 
-/* ---------------- Workout list + detail (same as prior, compact) ---------------- */
+/* ---------------- Workout list + detail ---------------- */
 function renderWorkout(){
   workoutList.innerHTML="";
   workoutTitle.textContent = st.active ? st.active.name : "Workout";
@@ -610,6 +616,7 @@ backBtn.onclick=()=>{ renderWorkout(); setActiveTab("workout"); };
 doneBtn.onclick=()=>{ renderWorkout(); setActiveTab("workout"); };
 saveAllBtn.onclick=()=>{ save(st); toast("Saved"); };
 
+/* ---------------- Finish workout ---------------- */
 finishBtn.onclick=()=>{
   if(!st.active) return;
 
@@ -637,22 +644,122 @@ finishBtn.onclick=()=>{
   toast("Workout saved");
 };
 
-/* ---------------- History (kept minimal here; uses same UI as earlier) ---------------- */
+/* ---------------- History: FULL feature set ---------------- */
+function fmtDate(ts){
+  const d=new Date(ts);
+  const day=d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"});
+  const time=d.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"});
+  return `${day} • ${time}`;
+}
+function guessKeyFromName(name){
+  const n=String(name||"").toLowerCase();
+  if(n.includes("upper a")) return "UA";
+  if(n.includes("lower a")) return "LA";
+  if(n.includes("upper b")) return "UB";
+  if(n.includes("upper c")) return "UC";
+  if(n.includes("lower b")) return "LB";
+  return "UA";
+}
+function getExerciseNameById(sessionKey, exId){
+  const arr=Program.template[sessionKey]||[];
+  const found=arr.find(x=>x.id===exId);
+  return found?found.name:exId;
+}
+function countCompletedSets(setsArr){ return (setsArr||[]).filter(s=>s&&s.completed).length; }
+function buildSetLine(s){
+  const w=(s?.weight??"").toString().trim();
+  const r=(s?.reps??"").toString().trim();
+  const pieces=[];
+  if(w) pieces.push(`${w}kg`);
+  if(r) pieces.push(`${r} reps`);
+  pieces.push(s?.completed ? "Done" : "Not done");
+  return pieces.join(" • ");
+}
+function applyHistoryEdit(inp){
+  const sid=inp.dataset.sid, exId=inp.dataset.ex, si=Number(inp.dataset.si), k=inp.dataset.k;
+  const idx=st.history.findIndex(x=>x.id===sid);
+  if(idx===-1) return;
+  const sess=st.history[idx];
+  if(!sess.sets||!sess.sets[exId]||!sess.sets[exId][si]) return;
+  if(k==="completed") sess.sets[exId][si].completed = !!inp.checked;
+  else sess.sets[exId][si][k] = inp.value;
+  save(st);
+}
+function deleteSingleSession(sessionId){
+  const idx=st.history.findIndex(x=>x.id===sessionId);
+  if(idx===-1) return;
+  const sess=st.history[idx];
+  const name=sess?.name?` (${sess.name})`:"";
+  if(!confirm(`Delete this session${name}? This cannot be undone.`)) return;
+  if(editingSessionId===sessionId){ editingSessionId=null; editSnapshot.delete(sessionId); }
+  st.history.splice(idx,1);
+  save(st);
+  renderHistory();
+  toast("Session deleted");
+}
+function deleteHistoryByRange(mode){
+  if(!st.history?.length){ toast("No history to delete"); return; }
+
+  if(mode==="all"){
+    if(!confirm("Delete ALL history? This cannot be undone.")) return;
+    const reset = confirm("Also reset your program back to Upper A / Week 1?\n\nOK = Yes, reset\nCancel = No");
+    st.history = [];
+    if(reset){
+      st.progression = { completedSessions: 0, nextIndex: 0 };
+      st.active = null;
+      st.timer = { running:false, endAt:0, lastShownDone:false, label:"" };
+    }
+    editingSessionId=null;
+    editSnapshot.clear();
+    save(st);
+    render();
+    renderWorkout();
+    renderHistory();
+    setActiveTab("today");
+    toast(reset ? "History deleted + program reset" : "History deleted");
+    return;
+  }
+
+  const now=Date.now();
+  const cutoff= now - (mode==="7d" ? msDays(7) : msDays(30));
+  const label = mode==="7d" ? "the last 7 days" : "the last 30 days";
+  if(!confirm(`Delete sessions from ${label}? This cannot be undone.`)) return;
+
+  st.history = st.history.filter(sess => (sess.finishedAt || sess.startedAt || 0) < cutoff);
+  if(editingSessionId && !st.history.some(s=>s.id===editingSessionId)) editingSessionId=null;
+
+  save(st);
+  renderHistory();
+  toast("History deleted");
+}
 function renderHistory(){
   exportOut.classList.add("hidden");
-  historyList.innerHTML = "";
-  const global = document.createElement("div");
-  global.className = "card";
-  global.innerHTML = `
+  historyList.innerHTML="";
+
+  const global=document.createElement("div");
+  global.className="card";
+  global.innerHTML=`
     <div class="row">
       <div>
-        <div class="h">History</div>
-        <div class="s">Your saved sessions.</div>
+        <div class="h">Manage History</div>
+        <div class="s">Delete logs safely with confirmation.</div>
       </div>
       <div class="pill subtle">${st.history.length} sessions</div>
     </div>
+    <div class="histActions">
+      <button class="histBtn warn" type="button" id="del7">Delete last 7 days</button>
+      <button class="histBtn warn" type="button" id="del30">Delete last 30 days</button>
+      <button class="histBtn danger" type="button" id="delAll">Delete all</button>
+    </div>
   `;
   historyList.appendChild(global);
+
+  const d7 = global.querySelector("#del7");
+  const d30 = global.querySelector("#del30");
+  const dAll = global.querySelector("#delAll");
+  if(d7) d7.onclick=()=>deleteHistoryByRange("7d");
+  if(d30) d30.onclick=()=>deleteHistoryByRange("30d");
+  if(dAll) dAll.onclick=()=>deleteHistoryByRange("all");
 
   if(!st.history.length){
     const d=document.createElement("div");
@@ -664,15 +771,20 @@ function renderHistory(){
 
   const sessions=[...st.history].slice().reverse();
   sessions.forEach((sess)=>{
+    const sessKey = sess.key || guessKeyFromName(sess.name);
+    const setsDone = Object.values(sess.sets||{}).reduce((a,arr)=>a+countCompletedSets(arr),0);
+    const isEditing = editingSessionId === sess.id;
+
     const details=document.createElement("details");
     details.className="histDetails";
+
     const summary=document.createElement("summary");
     summary.className="histSummary";
     summary.innerHTML=`
       <div class="histHead">
         <div>
           <div class="histTitle">${esc(sess.name||"Session")}</div>
-          <div class="histMeta">${esc(new Date(sess.finishedAt||sess.startedAt||Date.now()).toLocaleString())}</div>
+          <div class="histMeta">${esc(fmtDate(sess.finishedAt||sess.startedAt||Date.now()))} • Completed sets: ${setsDone}</div>
         </div>
         <div class="pill">Week ${esc(sess.week ?? "—")}</div>
       </div>
@@ -681,10 +793,140 @@ function renderHistory(){
 
     const body=document.createElement("div");
     body.className="histBody";
-    const setsDone = Object.values(sess.sets||{}).reduce((a,arr)=>a+(arr||[]).filter(x=>x?.completed).length,0);
-    body.innerHTML = `<div class="s">Completed sets: ${setsDone}</div>`;
+
+    const bar=document.createElement("div");
+    bar.className="histBar";
+
+    if(!isEditing){
+      const editBtn=document.createElement("button");
+      editBtn.className="histBtn";
+      editBtn.type="button";
+      editBtn.textContent="Edit";
+      editBtn.onclick=(e)=>{
+        e.preventDefault(); e.stopPropagation();
+        editingSessionId = sess.id;
+        editSnapshot.set(sess.id, deepCopy(sess));
+        renderHistory();
+      };
+      bar.appendChild(editBtn);
+
+      const delBtn=document.createElement("button");
+      delBtn.className="histBtn danger";
+      delBtn.type="button";
+      delBtn.textContent="Delete session";
+      delBtn.onclick=(e)=>{
+        e.preventDefault(); e.stopPropagation();
+        deleteSingleSession(sess.id);
+      };
+      bar.appendChild(delBtn);
+
+      const hint=document.createElement("div");
+      hint.className="s";
+      hint.textContent="Edit or delete this session.";
+      bar.appendChild(hint);
+    } else {
+      const saveBtn=document.createElement("button");
+      saveBtn.className="histBtn primary";
+      saveBtn.type="button";
+      saveBtn.textContent="Save";
+      saveBtn.onclick=(e)=>{
+        e.preventDefault(); e.stopPropagation();
+        save(st);
+        editingSessionId=null;
+        editSnapshot.delete(sess.id);
+        renderHistory();
+        toast("History updated");
+      };
+
+      const cancelBtn=document.createElement("button");
+      cancelBtn.className="histBtn danger";
+      cancelBtn.type="button";
+      cancelBtn.textContent="Cancel";
+      cancelBtn.onclick=(e)=>{
+        e.preventDefault(); e.stopPropagation();
+        const snap=editSnapshot.get(sess.id);
+        if(snap){
+          const idx=st.history.findIndex(x=>x.id===sess.id);
+          if(idx!==-1) st.history[idx]=snap;
+          save(st);
+        }
+        editingSessionId=null;
+        editSnapshot.delete(sess.id);
+        renderHistory();
+        toast("Reverted");
+      };
+
+      bar.appendChild(saveBtn);
+      bar.appendChild(cancelBtn);
+    }
+
+    body.appendChild(bar);
+
+    const exIds=Object.keys(sess.sets||{});
+    if(!exIds.length){
+      body.insertAdjacentHTML("beforeend", `<div class="s">No exercise data saved for this session.</div>`);
+    } else {
+      const order=(Program.template[sessKey]||[]).map(x=>x.id);
+      const sorted=exIds.slice().sort((a,b)=>{
+        const ia=order.indexOf(a), ib=order.indexOf(b);
+        if(ia===-1 && ib===-1) return a.localeCompare(b);
+        if(ia===-1) return 1;
+        if(ib===-1) return -1;
+        return ia-ib;
+      });
+
+      sorted.forEach((exId)=>{
+        const setsArr=sess.sets[exId]||[];
+        const done=countCompletedSets(setsArr);
+        const planned=setsArr.length||"—";
+        const exName=getExerciseNameById(sessKey, exId);
+
+        const exBlock=document.createElement("div");
+        exBlock.className="histExercise";
+        exBlock.innerHTML=`
+          <div class="histExName">${esc(exName)}</div>
+          <div class="histExSub">${done}/${planned} sets completed</div>
+        `;
+
+        const setsWrap=document.createElement("div");
+        setsWrap.className="histSets";
+
+        setsArr.forEach((s,si)=>{
+          if(!isEditing){
+            const row=document.createElement("div");
+            row.className="histSetRow";
+            row.innerHTML=`<div class="l">Set ${esc(s?.setIndex ?? "")}</div><div class="r">${esc(buildSetLine(s))}</div>`;
+            setsWrap.appendChild(row);
+            return;
+          }
+
+          const er=document.createElement("div");
+          er.className="histEditRow";
+          er.innerHTML=`
+            <div class="lbl">Set ${esc(s?.setIndex ?? "")}</div>
+            <input inputmode="decimal" placeholder="kg" value="${esc(s?.weight ?? "")}" data-sid="${esc(sess.id)}" data-ex="${esc(exId)}" data-si="${si}" data-k="weight" />
+            <input inputmode="numeric" placeholder="reps" value="${esc(s?.reps ?? "")}" data-sid="${esc(sess.id)}" data-ex="${esc(exId)}" data-si="${si}" data-k="reps" />
+            <input type="checkbox" ${s?.completed ? "checked" : ""} data-sid="${esc(sess.id)}" data-ex="${esc(exId)}" data-si="${si}" data-k="completed" />
+          `;
+          setsWrap.appendChild(er);
+        });
+
+        exBlock.appendChild(setsWrap);
+        body.appendChild(exBlock);
+      });
+    }
+
     details.appendChild(body);
     historyList.appendChild(details);
+
+    if(isEditing){
+      details.open=true;
+      details.querySelectorAll("input").forEach((inp)=>{
+        inp.oninput=()=>applyHistoryEdit(inp);
+        inp.onchange=()=>applyHistoryEdit(inp);
+        inp.onkeydown=(e)=>{ if(e.key==="Enter") inp.blur(); };
+      });
+    }
   });
 }
 
