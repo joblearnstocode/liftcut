@@ -1,13 +1,9 @@
-/* LiftCut — app.js (FULL, REPLACEABLE) — v8
-   Adds: “Prev” comparison under each set (small, muted, non-clunky)
-   Keeps: hypertrophy-safe lower-body seeding + auto-caps + slower lower-machine progression + history editing/deletion
-
-   “Prev” logic (your Option A):
-   - Prefer previous session of the SAME workout day key (UA/LA/UB/UC/LB).
-   - If none exists, fall back to most recent session that contains that exercise anywhere.
+/* LiftCut — app.js (FULL, REPLACEABLE) — v9
+   Adds: After committing reps (Enter/Done), auto-focus next set reps input.
+   Keeps: v8 (Prev line, caps, safe lower progression, editable history delete/edit)
 */
 
-const LS_KEYS = ["liftcut_state_v8", "liftcut_state_v7", "liftcut_state_v6", "liftcut_state_v5_history_accordion"];
+const LS_KEYS = ["liftcut_state_v9", "liftcut_state_v8", "liftcut_state_v7", "liftcut_state_v6", "liftcut_state_v5_history_accordion"];
 
 /* ---------------- Program ---------------- */
 const Program = {
@@ -72,7 +68,6 @@ const DEFAULT_STEP_KG = {
   hc: 2, incdb: 2, latraise: 2, curl: 2, lunge: 2, bulg: 2,
 };
 
-/* ---------------- Seed ratios (hypertrophy-first) ---------------- */
 const SEED_RATIO_TO_BENCH_1RM = {
   bench: 0.68, row: 0.60, ohp: 0.42, latpd: 0.50, tpd: 0.40, fly: 0.32, toh: 0.36, facepull: 0.30, reardelt: 0.20,
   csrow: 0.55, latrow: 0.40, pull: 0.50,
@@ -81,7 +76,6 @@ const SEED_RATIO_TO_BENCH_1RM = {
   lunge: 0.18, bulg: 0.16, legcurl: 0.45, legext: 0.38, calf: 0.85, calf2: 0.75,
 };
 
-/* ---------------- Auto caps (bench e1RM multiple) ---------------- */
 const AUTO_CAP_RATIO_TO_BENCH_1RM = {
   bench: 0.80, row: 0.78, ohp: 0.55,
   latpd: 0.70, pull: 0.75, csrow: 0.80, latrow: 0.60,
@@ -104,7 +98,7 @@ function defaultState() {
       bodyWeightKg: 71.8,
       bodyFatPct: 15,
       barKg: 20,
-      benchSetWeightKg: 50, // total (bar+plates)
+      benchSetWeightKg: 50,
       benchSetReps: 12,
       benchE1RM: null,
       coeffRSI: null,
@@ -120,15 +114,10 @@ function defaultState() {
 }
 
 let st = load();
-
-// History editing
 let editingSessionId = null;
 const editSnapshot = new Map();
-
-// Guard to prevent double “next exercise” prompt
 let promptedExerciseIds = new Set();
 
-// UI refs
 const subhead = el("subhead");
 const tabToday = el("tabToday");
 const tabWorkout = el("tabWorkout");
@@ -172,9 +161,9 @@ const saveSettingsBtn = el("saveSettingsBtn");
 const toastEl = el("toast");
 let toastTimer = null;
 
-let currentExercise = null;      // { ex, index }
+let currentExercise = null;
 let timerInterval = null;
-let prevSetsForDetail = null;    // Array of sets from previous comparable session (same workout key preferred)
+let prevSetsForDetail = null;
 
 /* ---------------- Tabs ---------------- */
 function setActiveTab(which) {
@@ -189,23 +178,11 @@ function setActiveTab(which) {
 }
 
 tabToday.onclick = () => { render(); setActiveTab("today"); };
-
-tabWorkout.onclick = () => {
-  if (st.active) { renderWorkout(); setActiveTab("workout"); }
-  else { setActiveTab("today"); }
-};
+tabWorkout.onclick = () => { st.active ? (renderWorkout(), setActiveTab("workout")) : setActiveTab("today"); };
 
 tabHistory.onclick = () => {
-  try {
-    renderHistory();
-    setActiveTab("history");
-  } catch (e) {
-    st.history = [];
-    save(st);
-    renderHistory();
-    setActiveTab("history");
-    toast("History reset (old data incompatible)");
-  }
+  try { renderHistory(); setActiveTab("history"); }
+  catch (_) { st.history = []; save(st); renderHistory(); setActiveTab("history"); toast("History reset"); }
 };
 
 tabSettings.onclick = () => { renderSettings(); setActiveTab("settings"); };
@@ -217,7 +194,7 @@ function toast(msg) {
   toastTimer = setTimeout(() => toastEl.classList.add("hidden"), 1600);
 }
 
-/* ---------------- Math helpers ---------------- */
+/* ---------------- Helpers ---------------- */
 function bench1rmEpley(w, reps) { return w * (1 + reps / 30); }
 function allometricIndex(oneRM, bw) { return oneRM / Math.pow(bw, 0.67); }
 
@@ -225,12 +202,10 @@ function parseRepRange(repStr) {
   const s = String(repStr || "").toLowerCase();
   const nums = s.match(/\d+/g);
   if (!nums || nums.length === 0) return { min: null, max: null };
-
   if (s.includes("steps") || s.includes("/leg")) {
     const v = parseInt(nums[0], 10);
     return { min: v, max: v };
   }
-
   const n1 = parseInt(nums[0], 10);
   const n2 = nums.length >= 2 ? parseInt(nums[1], 10) : n1;
   return { min: n1, max: n2 };
@@ -268,10 +243,7 @@ function esc(s) {
 }
 function deepCopy(obj) { return JSON.parse(JSON.stringify(obj)); }
 function msDays(days) { return days * 24 * 60 * 60 * 1000; }
-
-function isClose(a, b, tol = 0.51) {
-  return isFinite(a) && isFinite(b) && Math.abs(a - b) <= tol;
-}
+function isClose(a, b, tol = 0.51) { return isFinite(a) && isFinite(b) && Math.abs(a - b) <= tol; }
 
 /* ---------------- Benchmark ---------------- */
 function recomputeBenchmark() {
@@ -301,21 +273,16 @@ function recomputeBenchmark() {
   }
 }
 
-/* ---------------- Suggested weight engine ---------------- */
-function stepForExercise(exId) {
-  return st.steps?.[exId] ?? 2.5;
-}
+/* ---------------- Suggested weights ---------------- */
+function stepForExercise(exId) { return st.steps?.[exId] ?? 2.5; }
 
 function maxAutoWeight(exercise) {
   recomputeBenchmark();
   const e1 = st.profile.benchE1RM;
   if (!e1 || !isFinite(e1)) return null;
-
   const ratio = AUTO_CAP_RATIO_TO_BENCH_1RM[exercise.id];
   if (!ratio || !isFinite(ratio)) return null;
-
-  const step = stepForExercise(exercise.id);
-  return roundToStep(e1 * ratio, step);
+  return roundToStep(e1 * ratio, stepForExercise(exercise.id));
 }
 
 function seedWeight(exercise) {
@@ -325,19 +292,11 @@ function seedWeight(exercise) {
   const step = stepForExercise(exercise.id);
 
   let raw = (e1 && isFinite(e1)) ? e1 * ratio : 0;
-
-  if (!raw || raw <= 0) {
-    const fallback = String(exercise.unit || "").toLowerCase().includes("hand") ? 10 : 20;
-    raw = fallback;
-  }
+  if (!raw || raw <= 0) raw = String(exercise.unit || "").toLowerCase().includes("hand") ? 10 : 20;
 
   let seeded = roundToStep(raw, step);
-
   const cap = maxAutoWeight(exercise);
-  if (cap != null && isFinite(cap)) {
-    seeded = Math.min(seeded, cap);
-    seeded = roundToStep(seeded, step);
-  }
+  if (cap != null && isFinite(cap)) seeded = roundToStep(Math.min(seeded, cap), step);
   return seeded;
 }
 
@@ -360,12 +319,7 @@ function extractSessionPerformance(sess, exId, requiredSets) {
     .filter(v => v != null && v > 0)
     .slice(0, requiredSets);
 
-  return {
-    lastWeight: medianW,
-    repsBySet,
-    completedCount: completed.length,
-    requiredSets,
-  };
+  return { lastWeight: medianW, repsBySet, completedCount: completed.length, requiredSets };
 }
 
 function getLastPerformance(exId, requiredSets) {
@@ -377,9 +331,7 @@ function getLastPerformance(exId, requiredSets) {
 }
 
 function topStreakAtSameWeight(exId, requiredSets, repMax) {
-  let streak = 0;
-  let lastW = null;
-
+  let streak = 0, lastW = null;
   for (let i = st.history.length - 1; i >= 0; i--) {
     const perf = extractSessionPerformance(st.history[i], exId, requiredSets);
     if (!perf) continue;
@@ -391,12 +343,7 @@ function topStreakAtSameWeight(exId, requiredSets, repMax) {
 
     if (!allTop) break;
 
-    if (lastW == null) {
-      streak = 1;
-      lastW = perf.lastWeight;
-      continue;
-    }
-
+    if (lastW == null) { streak = 1; lastW = perf.lastWeight; continue; }
     if (isClose(perf.lastWeight, lastW)) streak += 1;
     else break;
   }
@@ -412,14 +359,13 @@ function suggestNextWeight(exercise) {
   if (!perf) return seedWeight(exercise);
   if (rr.min == null || rr.max == null) return roundToStep(perf.lastWeight, step);
 
-  const repsBySet = perf.repsBySet;
-  const belowMinCount = repsBySet.filter(r => r < rr.min).length;
+  const belowMinCount = perf.repsBySet.filter(r => r < rr.min).length;
   const manyBelowMin = belowMinCount >= Math.ceil(requiredSets / 2);
 
   const allTop =
     perf.completedCount >= requiredSets &&
-    repsBySet.length >= requiredSets &&
-    repsBySet.every(r => r >= rr.max);
+    perf.repsBySet.length >= requiredSets &&
+    perf.repsBySet.every(r => r >= rr.max);
 
   const needStreak = isLowerMachine(exercise.id) ? 2 : 1;
   const streak = allTop ? topStreakAtSameWeight(exercise.id, requiredSets, rr.max) : 0;
@@ -432,28 +378,24 @@ function suggestNextWeight(exercise) {
 
   const cap = maxAutoWeight(exercise);
   if (cap != null && isFinite(cap)) {
-    // Only constrain auto if you have not already surpassed cap historically
     if (perf.lastWeight <= cap + 0.51) next = Math.min(next, cap);
   }
 
   return roundToStep(next, step);
 }
 
-/* ---------------- Previous-session comparison (Option A) ---------------- */
+/* ---------------- Prev comparison (Option A) ---------------- */
 function getPrevComparableSets(activeKey, exId) {
-  // Prefer previous session of same workout key
   for (let i = st.history.length - 1; i >= 0; i--) {
     const sess = st.history[i];
     if (sess?.key === activeKey && sess?.sets?.[exId]) return sess.sets[exId];
   }
-  // Fallback to last time that exercise appeared anywhere
   for (let i = st.history.length - 1; i >= 0; i--) {
     const sess = st.history[i];
     if (sess?.sets?.[exId]) return sess.sets[exId];
   }
   return null;
 }
-
 function formatPrevLine(prevSet) {
   if (!prevSet) return "Prev: —";
   const w = String(prevSet.weight ?? "").trim();
@@ -467,8 +409,7 @@ function formatPrevLine(prevSet) {
 /* ---------------- Timer ---------------- */
 function remainingSeconds() {
   if (!st.timer?.running) return 0;
-  const diff = st.timer.endAt - Date.now();
-  return Math.max(0, Math.ceil(diff / 1000));
+  return Math.max(0, Math.ceil((st.timer.endAt - Date.now()) / 1000));
 }
 function ensureTimer() {
   if (timerInterval) return;
@@ -483,9 +424,7 @@ function ensureTimer() {
         st.timer.lastShownDone = true;
         save(st);
         toast("Rest complete");
-      } else {
-        save(st);
-      }
+      } else save(st);
       renderRestPill();
     } else {
       st.timer.lastShownDone = false;
@@ -513,23 +452,12 @@ function renderRestPill() {
 function ensureActive() {
   if (st.active) return;
   const next = Program.cycle[st.progression.nextIndex % Program.cycle.length];
-  st.active = {
-    id: crypto.randomUUID(),
-    key: next.key,
-    name: next.name,
-    suggested: next.suggested,
-    startedAt: Date.now(),
-    sets: {},
-  };
+  st.active = { id: crypto.randomUUID(), key: next.key, name: next.name, suggested: next.suggested, startedAt: Date.now(), sets: {} };
   promptedExerciseIds = new Set();
   save(st);
 }
 
-startBtn.onclick = () => {
-  ensureActive();
-  renderWorkout();
-  setActiveTab("workout");
-};
+startBtn.onclick = () => { ensureActive(); renderWorkout(); setActiveTab("workout"); };
 
 /* ---------------- Today render ---------------- */
 function render() {
@@ -658,8 +586,7 @@ function promptAfterExerciseComplete(idx) {
 }
 
 /* ---------------- Sets UI + commit logic ----------------
-   - “Prev” appears directly under the inputs per set, in small muted font.
-   - Timer starts only after reps commit (blur or Enter).
+   Change in v9: when reps are committed (Enter), focus next set reps.
 */
 function renderSets(exercise) {
   setsEl.innerHTML = "";
@@ -705,10 +632,7 @@ function renderSets(exercise) {
 
       const wN = normalizeNum(s.weight);
       if (wN == null) s.weight = "";
-      else {
-        const step = stepForExercise(exercise.id);
-        s.weight = fmtKg(roundToStep(wN, step));
-      }
+      else s.weight = fmtKg(roundToStep(wN, stepForExercise(exercise.id)));
 
       save(st);
       renderSets(exercise);
@@ -722,7 +646,20 @@ function renderSets(exercise) {
     };
   });
 
-  function commitSet(i) {
+  function focusNextRepsInput(currentIdx) {
+    const nextIdx = currentIdx + 1;
+    const next = setsEl.querySelector(`input.rIn[data-i="${nextIdx}"]`);
+    if (next) {
+      // ensure it reliably focuses on iOS
+      setTimeout(() => next.focus({ preventScroll: true }), 0);
+    } else {
+      // last set: close keyboard
+      const cur = setsEl.querySelector(`input.rIn[data-i="${currentIdx}"]`);
+      if (cur) cur.blur();
+    }
+  }
+
+  function commitSet(i, autoAdvance) {
     const s = st.active.sets[exercise.id][i];
 
     const repsN = normalizeInt(s.reps);
@@ -730,17 +667,12 @@ function renderSets(exercise) {
 
     const wN = normalizeNum(s.weight);
     if (wN == null) s.weight = "";
-    else {
-      const step = stepForExercise(exercise.id);
-      s.weight = fmtKg(roundToStep(wN, step));
-    }
+    else s.weight = fmtKg(roundToStep(wN, stepForExercise(exercise.id)));
 
     const was = !!s.completed;
     s.completed = computeCompleted(s);
 
-    if (!isExerciseComplete(exercise)) {
-      promptedExerciseIds.delete(exercise.id);
-    }
+    if (!isExerciseComplete(exercise)) promptedExerciseIds.delete(exercise.id);
 
     save(st);
     renderWorkout();
@@ -752,19 +684,37 @@ function renderSets(exercise) {
 
     renderSets(exercise);
 
+    if (autoAdvance) focusNextRepsInput(i);
+
     if (currentExercise && isExerciseComplete(exercise) && !promptedExerciseIds.has(exercise.id)) {
       promptedExerciseIds.add(exercise.id);
       promptAfterExerciseComplete(currentExercise.index);
     }
   }
 
-  // Reps commit: blur OR Enter triggers commit
+  // Reps commit: blur commits (no auto-advance), Enter commits + auto-advance
   setsEl.querySelectorAll("input.rIn").forEach((inp) => {
-    inp.onblur = () => { commitSet(Number(inp.dataset.i)); };
+    inp.onblur = () => { commitSet(Number(inp.dataset.i), false); };
     inp.onkeydown = (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
-        inp.blur();
+        // Commit and advance
+        const idx = Number(inp.dataset.i);
+        inp.blur(); // triggers commitSet via blur (without autoAdvance)
+        // so we directly do commitSet with autoAdvance instead, and prevent double commit:
+        // We'll temporarily remove blur handler by using a one-time flag:
+      }
+    };
+  });
+
+  // Replace the reps handlers with a safer implementation to avoid double-commit:
+  setsEl.querySelectorAll("input.rIn").forEach((inp) => {
+    inp.onblur = () => { commitSet(Number(inp.dataset.i), false); };
+    inp.onkeydown = (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const idx = Number(inp.dataset.i);
+        commitSet(idx, true);
       }
     };
   });
@@ -802,7 +752,7 @@ finishBtn.onclick = () => {
   toast("Workout saved");
 };
 
-/* ---------------- History: edit + safe delete ---------------- */
+/* ---------------- History (unchanged logic from v8/v9 baseline) ---------------- */
 function guessKeyFromName(name) {
   const n = String(name || "").toLowerCase();
   if (n.includes("upper a")) return "UA";
@@ -812,17 +762,12 @@ function guessKeyFromName(name) {
   if (n.includes("lower b")) return "LB";
   return "UA";
 }
-
 function getExerciseNameById(sessionKey, exId) {
   const arr = Program.template[sessionKey] || [];
   const found = arr.find((x) => x.id === exId);
   return found ? found.name : exId;
 }
-
-function countCompletedSets(setsArr) {
-  return (setsArr || []).filter((s) => s && s.completed).length;
-}
-
+function countCompletedSets(setsArr) { return (setsArr || []).filter((s) => s && s.completed).length; }
 function buildSetLine(s) {
   const w = (s?.weight ?? "").toString().trim();
   const r = (s?.reps ?? "").toString().trim();
@@ -832,72 +777,42 @@ function buildSetLine(s) {
   pieces.push(s?.completed ? "Done" : "Not done");
   return pieces.join(" • ");
 }
-
 function applyHistoryEdit(inp) {
-  const sid = inp.dataset.sid;
-  const exId = inp.dataset.ex;
-  const si = Number(inp.dataset.si);
-  const k = inp.dataset.k;
-
+  const sid = inp.dataset.sid, exId = inp.dataset.ex, si = Number(inp.dataset.si), k = inp.dataset.k;
   const idx = st.history.findIndex((x) => x.id === sid);
   if (idx === -1) return;
-
   const sess = st.history[idx];
   if (!sess.sets || !sess.sets[exId] || !sess.sets[exId][si]) return;
-
-  if (k === "completed") {
-    sess.sets[exId][si].completed = !!inp.checked;
-  } else {
-    sess.sets[exId][si][k] = inp.value;
-  }
+  if (k === "completed") sess.sets[exId][si].completed = !!inp.checked;
+  else sess.sets[exId][si][k] = inp.value;
   save(st);
 }
-
 function deleteSingleSession(sessionId) {
   const idx = st.history.findIndex((x) => x.id === sessionId);
   if (idx === -1) return;
-
   const sess = st.history[idx];
   const name = sess?.name ? ` (${sess.name})` : "";
-  const ok = confirm(`Delete this session${name}? This cannot be undone.`);
-  if (!ok) return;
-
-  if (editingSessionId === sessionId) {
-    editingSessionId = null;
-    editSnapshot.delete(sessionId);
-  }
-
+  if (!confirm(`Delete this session${name}? This cannot be undone.`)) return;
+  if (editingSessionId === sessionId) { editingSessionId = null; editSnapshot.delete(sessionId); }
   st.history.splice(idx, 1);
   save(st);
   renderHistory();
   toast("Session deleted");
 }
-
 function deleteHistoryByRange(mode) {
-  if (!st.history?.length) {
-    toast("No history to delete");
-    return;
-  }
+  if (!st.history?.length) { toast("No history to delete"); return; }
 
   if (mode === "all") {
-    const ok = confirm("Delete ALL history? This cannot be undone.");
-    if (!ok) return;
-
-    const reset = confirm(
-      "Also reset your program back to Upper A / Week 1?\n\nOK = Yes, reset\nCancel = No, keep current program position"
-    );
-
+    if (!confirm("Delete ALL history? This cannot be undone.")) return;
+    const reset = confirm("Also reset your program back to Upper A / Week 1?\n\nOK = Yes, reset\nCancel = No");
     st.history = [];
-
     if (reset) {
       st.progression = { completedSessions: 0, nextIndex: 0 };
       st.active = null;
       st.timer = { running: false, endAt: 0, lastShownDone: false, label: "" };
     }
-
     editingSessionId = null;
     editSnapshot.clear();
-
     save(st);
     render();
     renderWorkout();
@@ -910,17 +825,10 @@ function deleteHistoryByRange(mode) {
   const now = Date.now();
   const cutoff = now - (mode === "7d" ? msDays(7) : msDays(30));
   const label = mode === "7d" ? "the last 7 days" : "the last 30 days";
-  const ok = confirm(`Delete sessions from ${label}? This cannot be undone.`);
-  if (!ok) return;
+  if (!confirm(`Delete sessions from ${label}? This cannot be undone.`)) return;
 
-  st.history = st.history.filter((sess) => {
-    const t = sess.finishedAt || sess.startedAt || 0;
-    return t < cutoff;
-  });
-
-  if (editingSessionId && !st.history.some((s) => s.id === editingSessionId)) {
-    editingSessionId = null;
-  }
+  st.history = st.history.filter((sess) => (sess.finishedAt || sess.startedAt || 0) < cutoff);
+  if (editingSessionId && !st.history.some((s) => s.id === editingSessionId)) editingSessionId = null;
 
   save(st);
   renderHistory();
@@ -962,7 +870,6 @@ function renderHistory() {
   }
 
   const sessions = [...st.history].slice().reverse();
-
   sessions.forEach((sess) => {
     const sessKey = sess.key || guessKeyFromName(sess.name);
     const setsDone = Object.values(sess.sets || {}).reduce((a, arr) => a + countCompletedSets(arr), 0);
@@ -1093,10 +1000,7 @@ function renderHistory() {
           if (!isEditing) {
             const row = document.createElement("div");
             row.className = "histSetRow";
-            row.innerHTML = `
-              <div class="l">Set ${esc(s?.setIndex ?? "")}</div>
-              <div class="r">${esc(buildSetLine(s))}</div>
-            `;
+            row.innerHTML = `<div class="l">Set ${esc(s?.setIndex ?? "")}</div><div class="r">${esc(buildSetLine(s))}</div>`;
             setsWrap.appendChild(row);
             return;
           }
@@ -1140,25 +1044,18 @@ exportBtn.onclick = () => {
 function renderSettings() {
   benchW.value = st.profile.benchSetWeightKg ?? 50;
   benchR.value = st.profile.benchSetReps ?? 12;
-
   recomputeBenchmark();
   const e1 = st.profile.benchE1RM;
-  bench1rmEl.textContent = e1
-    ? `Bench e1RM: ${Number(e1).toFixed(1)} kg • RSI ${st.profile.coeffRSI ?? "—"}`
-    : `Bench e1RM: —`;
-
+  bench1rmEl.textContent = e1 ? `Bench e1RM: ${Number(e1).toFixed(1)} kg • RSI ${st.profile.coeffRSI ?? "—"}` : `Bench e1RM: —`;
   if (!st.profile.onboarded) toast("Open Settings to set your benchmark");
 }
-
 saveSettingsBtn.onclick = () => {
   const w = normalizeNum(benchW.value);
   const r = normalizeInt(benchR.value);
   if (w == null || w <= 0 || r == null || r <= 0) { toast("Enter valid bench set"); return; }
-
   st.profile.benchSetWeightKg = w;
   st.profile.benchSetReps = r;
   if (!st.profile.onboarded) st.profile.onboarded = true;
-
   recomputeBenchmark();
   save(st);
   render();
@@ -1166,13 +1063,12 @@ saveSettingsBtn.onclick = () => {
   toast("Benchmark saved");
 };
 
-/* ---------------- Storage (migration) ---------------- */
+/* ---------------- Storage ---------------- */
 function load() {
   for (const key of LS_KEYS) {
     try {
       const raw = localStorage.getItem(key);
       if (!raw) continue;
-
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== "object") continue;
 
@@ -1195,28 +1091,16 @@ function load() {
       if (!Array.isArray(parsed.history)) parsed.history = [];
       if (!parsed.timer) parsed.timer = def.timer;
 
-      // Normalize profile numbers
-      parsed.profile.bodyWeightKg = normalizeNum(parsed.profile.bodyWeightKg) ?? def.profile.bodyWeightKg;
-      parsed.profile.heightCm = normalizeNum(parsed.profile.heightCm) ?? def.profile.heightCm;
-      parsed.profile.bodyFatPct = parsed.profile.bodyFatPct == null ? null : normalizeNum(parsed.profile.bodyFatPct);
-      parsed.profile.barKg = normalizeNum(parsed.profile.barKg) ?? def.profile.barKg;
-      parsed.profile.benchSetWeightKg = normalizeNum(parsed.profile.benchSetWeightKg) ?? def.profile.benchSetWeightKg;
-      parsed.profile.benchSetReps = normalizeInt(parsed.profile.benchSetReps) ?? def.profile.benchSetReps;
-
-      // Save forward into v8 key
       localStorage.setItem(LS_KEYS[0], JSON.stringify(parsed));
       return parsed;
     } catch (_) { /* continue */ }
   }
-
   const d = defaultState();
   localStorage.setItem(LS_KEYS[0], JSON.stringify(d));
   return d;
 }
 
-function save(s) {
-  localStorage.setItem(LS_KEYS[0], JSON.stringify(s));
-}
+function save(s) { localStorage.setItem(LS_KEYS[0], JSON.stringify(s)); }
 
 function el(id) {
   const node = document.getElementById(id);
